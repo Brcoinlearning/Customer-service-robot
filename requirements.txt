@@ -1,4 +1,2 @@
 # 项目依赖
-lark-parser
-openai
 pytest
