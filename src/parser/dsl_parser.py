@@ -1,14 +1,14 @@
-# src/parser/dsl_parser.py
+from core.interfaces import IDSLParser
 import re
 from typing import Dict, List, Any
 
-class DSLParser:
+class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
     def __init__(self):
         self.intents = {}
         self.rules = []
     
     def parse(self, dsl_content: str) -> Dict[str, Any]:
-        """解析DSL脚本内容"""
+        """解析DSL脚本内容 - 实现IDSLParser接口"""
         lines = dsl_content.split('\n')
         current_rule = None
         

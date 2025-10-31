@@ -1,16 +1,17 @@
-# src/llm/spark_client.py
+from core.interfaces import ILLMClient
 import json
 import requests
 from typing import List, Dict
 import time
 
-class SparkLLMClient:
-    def __init__(self, api_key: str):
+class SparkLLMClient(ILLMClient):  # 已正确实现接口
+    def __init__(self, api_key: str, api_url: str = None, model: str = None):
         self.api_key = api_key
-        self.url = "https://spark-api-open.xf-yun.com/v1/chat/completions"
+        self.url = api_url if api_url else "https://spark-api-open.xf-yun.com/v1/chat/completions"
+        self.model = model if model else "lite"
     
     def detect_intent(self, user_input: str, available_intents: Dict[str, str]) -> str:
-        """使用LLM检测用户输入的意图"""
+        """使用LLM检测用户输入的意图 - 实现ILLMClient接口"""
         
         # 构建意图识别提示词 - 简化提示，强调只返回名称
         intent_list = list(available_intents.keys())
@@ -76,12 +77,12 @@ class SparkLLMClient:
             'content-type': "application/json"
         }
         body = {
-            "model": "lite",
+            "model": self.model,  # 使用配置的model，而不是硬编码"lite"
             "user": "user_id",
             "messages": messages,
             "stream": False,
-            "temperature": 0.1,  # 降低随机性
-            "max_tokens": 10     # 限制返回长度
+            "temperature": 0.1,
+            "max_tokens": 10
         }
         
         response = requests.post(url=self.url, json=body, headers=headers, timeout=30)
