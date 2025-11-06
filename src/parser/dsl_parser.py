@@ -32,6 +32,10 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
             # 解析WHEN条件
             elif line.startswith('WHEN') and current_rule:
                 self._parse_when_condition(line, current_rule, line_num)
+
+            # 解析追加的 AND 条件（WHEN 之后，THEN 之前）
+            elif line.startswith('AND') and current_rule and not current_rule.get('in_then_section'):
+                self._parse_when_condition(line, current_rule, line_num)
             
             # 解析THEN动作
             elif line.startswith('THEN') and current_rule:
@@ -74,6 +78,8 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
     
     def _parse_when_condition(self, line: str, current_rule: Dict, line_num: int):
         """解析WHEN条件"""
+        # 支持复合条件: WHEN INTENT_IS xxx AND ...
+        # 先处理 INTENT_IS
         if 'INTENT_IS' in line:
             match = re.search(r'INTENT_IS\s+(\w+)', line)
             if match:
@@ -83,6 +89,39 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
                 })
             else:
                 raise SyntaxError(f"Line {line_num}: Invalid INTENT_IS condition: {line}")
+
+        # 解析 USER_MENTION
+        user_mention_match = re.search(r'USER_MENTION\s+"([^"]+)"', line)
+        if user_mention_match:
+            current_rule['conditions'].append({
+                'type': 'user_mention',
+                'keyword': user_mention_match.group(1)
+            })
+
+        # 解析 CONTEXT_NOT_SET var
+        context_not_set_match = re.search(r'CONTEXT_NOT_SET\s+(\w+)', line)
+        if context_not_set_match:
+            current_rule['conditions'].append({
+                'type': 'context_not_set',
+                'var_name': context_not_set_match.group(1)
+            })
+
+        # 解析 CONTEXT_EQ var = "value"
+        context_eq_match = re.search(r'CONTEXT_EQ\s+(\w+)\s*=\s*"([^"]+)"', line)
+        if context_eq_match:
+            current_rule['conditions'].append({
+                'type': 'context_eq',
+                'var_name': context_eq_match.group(1),
+                'value': context_eq_match.group(2)
+            })
+
+        # 解析 CONTEXT_STAGE_IS "stage"
+        stage_match = re.search(r'CONTEXT_STAGE_IS\s+"([^"]+)"', line)
+        if stage_match:
+            current_rule['conditions'].append({
+                'type': 'stage_is',
+                'stage': stage_match.group(1)
+            })
     
     def _parse_action(self, line: str, current_rule: Dict, line_num: int):
         """解析动作"""
@@ -95,3 +134,34 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
                 })
             else:
                 raise SyntaxError(f"Line {line_num}: Invalid RESPOND action: {line}")
+        elif line.startswith('SET_STAGE'):
+            match = re.match(r'SET_STAGE\s+"([^"]+)"', line)
+            if match:
+                current_rule['actions'].append({
+                    'type': 'set_stage',
+                    'stage': match.group(1)
+                })
+            else:
+                raise SyntaxError(f"Line {line_num}: Invalid SET_STAGE action: {line}")
+        elif line.startswith('SET_VAR'):
+            # SET_VAR key = "value"
+            match = re.match(r'SET_VAR\s+(\w+)\s*=\s*"([^"]+)"', line)
+            if match:
+                current_rule['actions'].append({
+                    'type': 'set_variable',
+                    'var_name': match.group(1),
+                    'value': match.group(2)
+                })
+            else:
+                raise SyntaxError(f"Line {line_num}: Invalid SET_VAR action: {line}")
+        elif line.startswith('ADD_TO_CHAIN'):
+            # ADD_TO_CHAIN type = "category" value = "电脑"
+            match = re.match(r'ADD_TO_CHAIN\s+type\s*=\s*"([^"]+)"\s+value\s*=\s*"([^"]+)"', line)
+            if match:
+                current_rule['actions'].append({
+                    'type': 'add_to_chain',
+                    'item_type': match.group(1),
+                    'item_value': match.group(2)
+                })
+            else:
+                raise SyntaxError(f"Line {line_num}: Invalid ADD_TO_CHAIN action: {line}")

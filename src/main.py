@@ -8,7 +8,7 @@ from parser.dsl_parser import DSLParser
 from interpreter.interpreter import DSLInterpreter
 from llm.spark_client import SparkLLMClient
 from config.settings import Config
-from core.context import ConversationContext
+from core.enhanced_context import EnhancedConversationContext
 
 def load_dsl_script(file_path: str) -> str:
     """加载DSL脚本文件"""
@@ -62,7 +62,7 @@ def main():
     print("步骤3: 正在初始化解释器...")
     try:
         interpreter = DSLInterpreter(parsed_dsl)
-        context_manager = ConversationContext()  # 初始化上下文管理器
+        context_manager = EnhancedConversationContext()
         context_manager.update_context("user_id", "current_user")  # 设置用户ID
         print("✅ 解释器初始化成功")
     except Exception as e:
@@ -105,9 +105,14 @@ def main():
             # 更新上下文
             context_manager.update_context("current_intent", detected_intent)
             context_manager.add_message("user", user_input)
+
+            # 构造传给解释器的上下文：包含原始上下文、管理器引用和本轮输入
+            ctx = context_manager.get_context()
+            ctx["_manager"] = context_manager
+            ctx["user_input"] = user_input
             
             # 执行DSL规则 - 传递上下文
-            responses = interpreter.execute(detected_intent, context_manager.get_context())
+            responses = interpreter.execute(detected_intent, ctx)
             
             # 输出响应并更新上下文
             print("🤖 客服:", end="")
