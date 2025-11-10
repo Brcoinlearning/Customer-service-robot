@@ -14,6 +14,29 @@ class DSLInterpreter(IInterpreter):
 
         responses: List[str] = []
         context = context or {}
+        user_input = context.get("user_input", "").strip()
+
+        # 智能处理数字选项：基于上下文修正意图
+        if user_input in ['1', '2', '3', '4', '5']:
+            current_stage = context.get('current_stage', '')
+            print(f"检测到数字选项 '{user_input}'，当前阶段: {current_stage}")
+            
+            # 只在购物车相关阶段，才将数字选项修正为cart_operation
+            # 在产品选择阶段，保持为product_query
+            if current_stage in ['cart_added', 'viewing_cart', 'checkout']:
+                if detected_intent == "product_query":
+                    print("购物车阶段：修正意图: product_query → cart_operation")
+                    detected_intent = "cart_operation"
+            else:
+                # 在产品选择阶段，确保数字选项保持为product_query
+                if detected_intent != "product_query":
+                    print(f"产品选择阶段：确保数字选项意图为product_query")
+                    detected_intent = "product_query"
+
+        # 原有的确认词处理
+        if detected_intent == "product_query" and user_input in ['是', '是的', '好的', '可以', '行']:
+            print("检测到确认词，将意图从product_query改为confirmation")
+            detected_intent = "confirmation"
 
         # 规则匹配
         for rule in self.rules:
@@ -27,26 +50,37 @@ class DSLInterpreter(IInterpreter):
             responses.append("抱歉，我没有理解您的问题。请您重新描述。")
 
         return responses
-
+    
     def _match_rule(self, rule: Dict, detected_intent: str, context: Dict[str, Any]) -> bool:
         """检查规则是否匹配，支持意图和上下文条件"""
-
-        # 没有条件时不匹配，避免误触发
-        if not rule.get("conditions"):
-            return False
+        
+        """print(f"正在匹配规则: {rule['name']}")"""
+        """print(f"当前上下文: {context}")"""
 
         for condition in rule["conditions"]:
             ctype = condition["type"]
+            print(f"检查条件: {ctype} - {condition}")
 
             if ctype == "intent":
                 if condition.get("intent_name") != detected_intent:
+                    """print(f"意图不匹配: 期望{condition.get('intent_name')}, 实际{detected_intent}")"""
                     return False
 
             elif ctype == "user_mention":
                 user_text = context.get("user_input", "")
                 keyword = condition.get("keyword", "")
                 if keyword and keyword not in user_text:
+                    """print(f"关键词不匹配: 期望包含'{keyword}', 实际'{user_text}'")"""
                     return False
+
+            elif ctype == "user_mention_any":
+                user_text = context.get("user_input", "").lower()
+                keywords = condition.get("keywords", [])
+                matched = any(keyword.lower() in user_text for keyword in keywords)
+                if not matched:
+                    """print(f"任意关键词不匹配: 期望包含{keywords}之一, 实际'{user_text}'")"""
+                    return False
+
 
             elif ctype == "context_not_set":
                 var_name = condition.get("var_name")
@@ -98,8 +132,25 @@ class DSLInterpreter(IInterpreter):
             elif atype == "record_preference" and context_manager:
                 context_manager.record_preference(action["key"], action["value"])
 
-        return responses
+            elif atype == "reset_shopping_context" and context_manager:
+                context_manager._reset_context()
+                context_manager.set_stage("welcome")
 
+            # 新增：完整重置购物上下文
+            elif atype == "reset_shopping_context" and context_manager:
+                if hasattr(context_manager, 'reset_shopping_context'):
+                    context_manager.reset_shopping_context()
+                else:
+                    # 后备方案：手动重置关键变量
+                    reset_vars = ["current_category", "current_brand", "current_series", "product_chain"]
+                    for var in reset_vars:
+                        context_manager.update_context(var, None)
+                    context_manager.set_stage("welcome")
+                    print("⚠️ 使用后备方案重置上下文")
+
+        return responses
+    
+   
     def _replace_variables(self, message: str, context: Dict[str, Any]) -> str:
         """替换消息中的变量占位符"""
 

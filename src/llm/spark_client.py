@@ -13,22 +13,37 @@ class SparkLLMClient(ILLMClient):  # 已正确实现接口
     def detect_intent(self, user_input: str, available_intents: Dict[str, str]) -> str:
         """使用LLM检测用户输入的意图 - 实现ILLMClient接口"""
         
-        # 构建意图识别提示词 - 简化提示，强调只返回名称
-        intent_list = list(available_intents.keys())
-        intent_names = ", ".join(intent_list)
+        # 首先进行简单关键词匹配，处理明确的确认/否定词
+        simple_words = ['是', '是的', '好的', '可以', '行', '不', '不要', '不用', '否', '不是']
+        if user_input.strip() in simple_words:
+            print("检测到简单确认/否定词，直接返回confirmation意图")
+            return "confirmation"
         
-        prompt = f"""你是一个严格的意图分类器。请分析用户输入并只返回最匹配的意图名称。
+        # 注意：这里不再处理数字选项，交给解释器根据上下文处理
+        # 因为数字选项的意图取决于当前对话阶段
+        
+        # 原有的LLM识别逻辑...
+        intent_list = list(available_intents.keys())
+        intent_descriptions = "\n".join([f"- {name}: {desc}" for name, desc in available_intents.items()])
+        
+        prompt = f"""你是一个客服意图分类器。请分析用户输入并返回最匹配的意图名称。
 
-可用意图名称: {intent_names}
+    可用意图：
+    {intent_descriptions}
 
-用户输入: "{user_input}"
+    用户输入: "{user_input}"
 
-要求:
-1. 只返回意图名称，不要任何其他文字
-2. 如果不匹配任何意图，返回 "unknown"
-3. 不要解释，不要示例，不要额外内容
+    重要规则：
+    1. 如果用户提到购买、产品、电脑、手机、价格、配置等，返回 product_query
+    2. 如果用户说"你好"、"您好"等问候语，返回 greeting  
+    3. 如果用户询问订单、物流、发货状态，返回 order_status
+    4. 如果用户表达不满、投诉、问题，返回 complaint
+    5. 如果用户提到购物车、加入、结算、下单等，返回 cart_operation
+    6. 如果用户说简单的确认词（是、是的、好的、可以、行、没问题、确定、加入、要）或否定词（不、不要、不用、否、不是），返回 confirmation
+    7. 对于数字选项（1、2、3等），如果在产品选择上下文中返回 product_query
+    8. 只返回意图名称，不要其他内容
 
-直接返回意图名称:"""
+    意图名称:"""
 
         messages = [
             {"role": "user", "content": prompt}
@@ -53,7 +68,6 @@ class SparkLLMClient(ILLMClient):  # 已正确实现接口
                 
         except Exception as e:
             print(f"LLM API调用失败: {e}")
-            # 降级处理：使用关键词匹配
             return self._fallback_intent_detection(user_input, available_intents)
     
     def _clean_intent_response(self, intent_response: str) -> str:
@@ -77,7 +91,7 @@ class SparkLLMClient(ILLMClient):  # 已正确实现接口
             'content-type': "application/json"
         }
         body = {
-            "model": self.model,  # 使用配置的model，而不是硬编码"lite"
+            "model": "lite",
             "user": "user_id",
             "messages": messages,
             "stream": False,
@@ -98,17 +112,22 @@ class SparkLLMClient(ILLMClient):  # 已正确实现接口
         
         keyword_mapping = {
             'greeting': ['你好', '您好', 'hello', 'hi', '早上好', '下午好', '晚上好', '嗨'],
-            'product_query': ['产品', '商品', '买', '购买', '价格', '多少钱', '有什么', '推荐', '型号'],
+            'product_query': ['产品', '商品', '买', '购买', '价格', '多少钱', '有什么', '推荐', '型号', '电脑', '手机', '笔记本', '苹果', '联想', '戴尔'],
             'order_status': ['订单', '物流', '发货', '到哪里', '状态', '跟踪', '配送', '快递'],
-            'complaint': ['投诉', '抱怨', '不满意', '问题', '故障', '坏了', '质量', '差']
+            'complaint': ['投诉', '抱怨', '不满意', '问题', '故障', '坏了', '质量', '差'],
+            'cart_operation': ['购物车', '加入', '结算', '下单', '购买', '付款', '车'],
+            'confirmation': ['是', '是的', '好的', '可以', '行', '没问题', '确定', '加入', '要', 
+                            '不', '不要', '不用', '否', '不是', '不需要', '再看看']  # 增强确认词列表
         }
         
         print("使用关键词匹配进行意图识别...")
         for intent, keywords in keyword_mapping.items():
-            for keyword in keywords:
-                if keyword in user_input_lower:
-                    print(f"关键词匹配: '{keyword}' -> {intent}")
-                    return intent
+            # 检查意图是否在可用意图中（避免识别到DSL中不存在的意图）
+            if intent in available_intents:
+                for keyword in keywords:
+                    if keyword in user_input_lower:
+                        print(f"关键词匹配: '{keyword}' -> {intent}")
+                        return intent
         
         print("未找到匹配关键词，返回 'unknown'")
         return "unknown"

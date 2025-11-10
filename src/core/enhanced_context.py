@@ -144,3 +144,39 @@ class EnhancedConversationContext(IContextManager):
                 "series": self._context["current_series"]
             }
         }
+
+    def reset_shopping_context(self):
+        """完整重置购物上下文，回到初始状态"""
+        # 保留基本的用户信息和对话历史
+        user_id = self._context["user_id"]
+        start_time = self._context["start_time"]
+        conversation_history = self._context["conversation_history"]
+        query_count = self._context["query_count"]
+        
+        # 完整重置购物上下文
+        self._context = {
+            # 用户标识
+            "user_id": user_id,
+            "start_time": start_time,
+            
+            # 对话状态 - 重置为welcome
+            "current_stage": "welcome",
+            "state_history": ["welcome"],
+            
+            # 产品选择链 - 完全清空
+            "product_chain": [],
+            "current_category": None,
+            "current_brand": None,
+            "current_series": None,
+            
+            # 用户偏好 - 重置
+            "user_preferences": {},
+            "budget_range": None,
+            "usage_scenario": None,
+            
+            # 对话记忆 - 保留历史但清空提及产品
+            "conversation_history": conversation_history,
+            "mentioned_products": [],
+            "query_count": query_count
+        }
+        print("✅ 购物上下文已重置")

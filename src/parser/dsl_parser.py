@@ -79,7 +79,8 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
     def _parse_when_condition(self, line: str, current_rule: Dict, line_num: int):
         """解析WHEN条件"""
         # 支持复合条件: WHEN INTENT_IS xxx AND ...
-        # 先处理 INTENT_IS
+        
+        # 处理 INTENT_IS
         if 'INTENT_IS' in line:
             match = re.search(r'INTENT_IS\s+(\w+)', line)
             if match:
@@ -87,15 +88,24 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
                     'type': 'intent',
                     'intent_name': match.group(1)
                 })
-            else:
-                raise SyntaxError(f"Line {line_num}: Invalid INTENT_IS condition: {line}")
 
-        # 解析 USER_MENTION
+        # 解析 USER_MENTION - 支持多个关键词
         user_mention_match = re.search(r'USER_MENTION\s+"([^"]+)"', line)
         if user_mention_match:
+            keywords = user_mention_match.group(1).split('|')
+            for keyword in keywords:
+                current_rule['conditions'].append({
+                    'type': 'user_mention',
+                    'keyword': keyword.strip()
+                })
+
+        # 解析 USER_MENTION_ANY - 任意一个关键词匹配即可
+        user_mention_any_match = re.search(r'USER_MENTION_ANY\s+"([^"]+)"', line)
+        if user_mention_any_match:
+            keywords = user_mention_any_match.group(1).split('|')
             current_rule['conditions'].append({
-                'type': 'user_mention',
-                'keyword': user_mention_match.group(1)
+                'type': 'user_mention_any',
+                'keywords': [k.strip() for k in keywords]
             })
 
         # 解析 CONTEXT_NOT_SET var
@@ -134,6 +144,10 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
                 })
             else:
                 raise SyntaxError(f"Line {line_num}: Invalid RESPOND action: {line}")
+        elif line.startswith('RESET_SHOPPING_CONTEXT'):
+            current_rule['actions'].append({
+                'type': 'reset_shopping_context'
+            })
         elif line.startswith('SET_STAGE'):
             match = re.match(r'SET_STAGE\s+"([^"]+)"', line)
             if match:
@@ -164,4 +178,4 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
                     'item_value': match.group(2)
                 })
             else:
-                raise SyntaxError(f"Line {line_num}: Invalid ADD_TO_CHAIN action: {line}")
+                raise SyntaxError(f"Line {line_num}: Invalid ADD_TO_CHAIN action: {line}")  
