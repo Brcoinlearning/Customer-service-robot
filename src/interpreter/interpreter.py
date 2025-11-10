@@ -132,10 +132,6 @@ class DSLInterpreter(IInterpreter):
             elif atype == "record_preference" and context_manager:
                 context_manager.record_preference(action["key"], action["value"])
 
-            elif atype == "reset_shopping_context" and context_manager:
-                context_manager._reset_context()
-                context_manager.set_stage("welcome")
-
             # 新增：完整重置购物上下文
             elif atype == "reset_shopping_context" and context_manager:
                 if hasattr(context_manager, 'reset_shopping_context'):
