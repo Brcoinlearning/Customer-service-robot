@@ -100,6 +100,23 @@ class DSLInterpreter(IInterpreter):
                 if context.get(var_name) != expected:
                     return False
 
+            elif ctype == "context_has":
+                var_name = condition.get("var_name")
+                if not var_name:
+                    return False
+                # 
+                value = context.get(var_name)
+                # 
+                if value is None and "session_variables" in context:
+                    value = context["session_variables"].get(var_name)
+                # 
+                if value is None:
+                    return False
+                # 
+                if "value" in condition and condition["value"] is not None:
+                    if value != condition["value"]:
+                        return False
+
             elif ctype == "stage_is":
                 stage = context.get("current_stage") or context.get("current_stage")
                 expected = condition.get("stage")

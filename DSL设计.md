@@ -7,7 +7,98 @@
 - **可扩展性**：易于添加新的意图类型和响应动作
 - **集成友好**：便于与LLM API集成进行意图识别
 
-### 2. DSL语法定义（BNF格式）
+### 2. 迭代说明与当前实现版 DSL 文法
+
+#### 2.1 迭代背景
+
+- 初版设计时，我们给出了一套**通用型 DSL BNF**（见下文“初版 DSL 语法定义”），强调可以用于多种场景（电商、售后、银行等），语法里有 `CONTAINS_KEYWORD`、`SET` 等较抽象的构件。
+- 在实际实现过程中，我们为了配合：
+  - 记忆特性（上下文变量、阶段 stage）
+  - 商品链条 `product_chain` 的维护
+  - 更贴近中文场景的“多关键词匹配”
+ 逐步演化出一套**更贴近当前代码实现的 DSL 语法**，并在 `ecommerce.dsl` 中落地。
+- 因此：
+  - **本节给出的，是与当前代码实现一一对应的“最终版 DSL 文法”**；
+  - 下文原来的 BNF 被标为“初版设计（历史版本）”，用于展示我们从设计到实现的思考与取舍。
+
+#### 2.2 当前实现版 DSL 语法概览（与代码一致）
+
+> 说明：下面的文法是对当前 `DSLParser` + `ecommerce.dsl` 的抽象总结，目的是让读者理解“真正可用”的语法，而不是逐字符的解析器实现细节。
+
+```bnf
+<program> ::= <intent_definition>+ <rule_definition>+
+
+<intent_definition> ::= "INTENT" <identifier> ":" <string_literal>
+
+<rule_definition> ::= "RULE" <identifier> NEWLINE
+                      "WHEN" <condition> ("AND" <condition>)* NEWLINE
+                      "THEN" NEWLINE
+                      <action_line>+
+
+<condition> ::= <intent_condition>
+              | <user_mention_condition>
+              | <user_mention_any_condition>
+              | <context_not_set_condition>
+              | <context_eq_condition>
+              | <context_stage_condition>
+              | <context_has_condition>
+
+<intent_condition> ::= "INTENT_IS" <identifier>
+
+<user_mention_condition> ::= "USER_MENTION" <string_literal>
+
+<user_mention_any_condition> ::= "USER_MENTION_ANY" <string_literal>
+
+<context_not_set_condition> ::= "CONTEXT_NOT_SET" <identifier>
+
+<context_eq_condition> ::= "CONTEXT_EQ" <identifier> "=" <string_literal>
+
+<context_stage_condition> ::= "CONTEXT_STAGE_IS" <string_literal>
+
+<context_has_condition> ::= "CONTEXT_HAS" <string_literal>
+                          | "CONTEXT_HAS" <string_literal> "=" <number>
+
+<action_line> ::= "RESPOND" <string_literal>
+                | "RESET_SHOPPING_CONTEXT"
+                | "SET_STAGE" <string_literal>
+                | "SET_VAR" <identifier> "=" <string_literal>
+                | "ADD_TO_CHAIN" "type" "=" <string_literal> "value" "=" <string_literal>
+                | "ADD_TO_CHAIN" <string_literal> <string_literal>    ; 精简写法，等价于指定 type + value
+                | "INCREMENT" <identifier>
+
+<identifier> ::= [a-zA-Z_][a-zA-Z0-9_]*
+
+<string_literal> ::= "\"" [^"]* "\""
+
+<number> ::= [0-9]+
+```
+
+- `USER_MENTION`：匹配**用户输入中包含某个关键词/短语**（实现上支持在一个字符串中用 `|` 分隔多个候选，例如 `"加购|加入购物车"`）。
+- `USER_MENTION_ANY`：匹配**用户输入中出现任意一个关键词**（用于“常见问题”这种宽泛触达）。
+- `CONTEXT_EQ / CONTEXT_NOT_SET / CONTEXT_STAGE_IS / CONTEXT_HAS`：在 DSL 层面表达对对话上下文的约束，例如：
+  - 只在 `query_count` 为 0 时触发某条规则；
+  - 只在 `current_stage` 为 `category_select` 时触发某条规则；
+  - 使用 `CONTEXT_HAS "query_count" = 0` 表达“变量存在且等于某个数字”的条件。
+- `RESET_SHOPPING_CONTEXT` / `SET_STAGE` / `ADD_TO_CHAIN` / `INCREMENT`：用于维护多轮对话状态和商品选择链路，是当前实现中最核心的“带记忆的动作”集合。
+
+#### 2.3 与初版文法的主要差异（体现设计演进）
+
+- **关键词匹配方式的演进**：
+  - 初版文法中设计的是通用的 `CONTAINS_KEYWORD ["A", "B", ...]`；
+  - 实现中改为 `USER_MENTION` / `USER_MENTION_ANY`，并支持在一个字符串内用 `|` 表示多个候选，更贴近中文语料与正则式思维，也更方便在解释器里做“意图兜底”。
+- **上下文感知能力的增强**：
+  - 初版仅有基于意图和关键词的条件；
+  - 实现版 DSL 加入了 `CONTEXT_EQ`、`CONTEXT_NOT_SET`、`CONTEXT_STAGE_IS`、`CONTEXT_HAS` 等条件，使规则可以直接感知对话阶段和历史变量，而不需要在 Python 里硬编码大量 if/else。
+- **动作系统的丰富化**：
+  - 初版只有 `RESPOND`、`TRANSFER_TO`、`END_CONVERSATION`、`SET` 等通用动作；
+  - 实现中新增了 `RESET_SHOPPING_CONTEXT`、`SET_STAGE`、`ADD_TO_CHAIN`、`INCREMENT` 等电商场景特化动作，将“选类目 → 选品牌 → 选系列 → 加入购物车”的流程收敛到 DSL 内部，减少 Python 代码中对业务流程的硬编码。
+- **设计取舍**：
+  - 我们保留了初版文法中“通用、多场景可复用”的思想，但在课程项目落地时，更优先保证**电商客服场景的可用性和可维护性**；
+  - 因此选择了先让实现版 DSL 与当前代码高度一致，再在文档中说明这一演进过程，而不是强行让代码完全追上初版的抽象设计。
+
+> 下面一节开始的 BNF 为**初版 DSL 语法定义（历史版本）**，主要用于展示最初的抽象设计思路，与当前实现存在一定差异。实际使用 DSL 时，应以本节给出的“当前实现版 DSL 语法概览”为准。
+
+### 3. 初版 DSL 语法定义（BNF格式，历史版本）
 
 ```
 <program> ::= <statement>+
@@ -16,8 +107,8 @@
 
 <intent_definition> ::= "INTENT" <identifier> ":" <string_literal>
 
-<rule_definition> ::= "RULE" <identifier> 
-                      "WHEN" <condition> 
+<rule_definition> ::= "RULE" <identifier>
+                      "WHEN" <condition>
                       "THEN" <action>+
 
 <condition> ::= <intent_condition> | <keyword_condition> | <compound_condition>
@@ -49,7 +140,7 @@
 <boolean> ::= "TRUE" | "FALSE"
 ```
 
-### 3. DSL语义说明
+### 4. DSL语义说明
 
 #### 核心概念：
 
@@ -65,7 +156,7 @@
 3. 执行第一个匹配规则的THEN部分
 4. 如果没有规则匹配，执行默认规则
 
-### 4. 脚本范例
+### 5. 脚本范例
 
 #### 范例1：电商客服场景
 

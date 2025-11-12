@@ -116,6 +116,25 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
                 'var_name': context_not_set_match.group(1)
             })
 
+        # 解析 CONTEXT_HAS "var_name" [= number]
+        # 形式一：CONTEXT_HAS "query_count" = 0  （变量存在且值等于给定数字）
+        context_has_eq_match = re.search(r'CONTEXT_HAS\s+"([^"]+)"\s*=\s*(\d+)', line)
+        if context_has_eq_match:
+            var_name, value_str = context_has_eq_match.groups()
+            current_rule['conditions'].append({
+                'type': 'context_has',
+                'var_name': var_name,
+                'value': int(value_str)
+            })
+        else:
+            # 形式二：CONTEXT_HAS "current_category"  （变量存在且不为 None）
+            context_has_match = re.search(r'CONTEXT_HAS\s+"([^"]+)"', line)
+            if context_has_match:
+                current_rule['conditions'].append({
+                    'type': 'context_has',
+                    'var_name': context_has_match.group(1)
+                })
+
         # 解析 CONTEXT_EQ var = "value"
         context_eq_match = re.search(r'CONTEXT_EQ\s+(\w+)\s*=\s*"([^"]+)"', line)
         if context_eq_match:
@@ -132,7 +151,7 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
                 'type': 'stage_is',
                 'stage': stage_match.group(1)
             })
-    
+
     def _parse_action(self, line: str, current_rule: Dict, line_num: int):
         """解析动作"""
         if line.startswith('RESPOND'):

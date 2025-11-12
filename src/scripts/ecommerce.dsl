@@ -1,5 +1,5 @@
 INTENT greeting: "问候和欢迎"
-INTENT product_query: "产品咨询" 
+INTENT product_query: "产品咨询"
 INTENT order_status: "订单状态查询"
 INTENT complaint: "投诉建议"
 INTENT cart_operation: "购物车操作"
@@ -32,7 +32,7 @@ THEN
     RESPOND "目前主流手机品牌有：苹果、华为、小米、三星等。"
     RESPOND "您更倾向哪个品牌？"
 
-# 从手机切换到电脑  
+# 从手机切换到电脑
 RULE switch_phone_to_computer
 WHEN INTENT_IS product_query
     AND USER_MENTION_ANY "电脑|还是买电脑|换成电脑|改为电脑"
@@ -65,7 +65,6 @@ RULE product_query_set_category_computer
 WHEN INTENT_IS product_query
     AND USER_MENTION_ANY "电脑|计算机|笔记本|台式机|macbook|mac"
     AND CONTEXT_NOT_SET current_category
-    AND CONTEXT_STAGE_IS "welcome"
 THEN
     SET_VAR current_category = "电脑"
     ADD_TO_CHAIN type = "category" value = "电脑"
@@ -78,7 +77,6 @@ RULE product_query_set_category_phone
 WHEN INTENT_IS product_query
     AND USER_MENTION_ANY "手机|iphone|华为|小米|三星|oppo|vivo"
     AND CONTEXT_NOT_SET current_category
-    AND CONTEXT_STAGE_IS "welcome"
 THEN
     SET_VAR current_category = "手机"
     ADD_TO_CHAIN type = "category" value = "手机"
@@ -86,14 +84,27 @@ THEN
     RESPOND "好的，您想买手机。目前主流品牌有：苹果、华为、小米、三星等。"
     RESPOND "您更倾向哪个品牌？"
 
-# 兜底：询问大类
-RULE product_query_ask_category
+# 兜底：询问大类（根据 query_count 区分首次/重复）
+RULE product_query_ask_category_first_time
 WHEN INTENT_IS product_query
     AND CONTEXT_NOT_SET current_category
     AND CONTEXT_STAGE_IS "welcome"
+    AND CONTEXT_HAS "query_count" = 0
 THEN
     SET_STAGE "category_select"
-    RESPOND "感谢您的咨询！您是想了解【电脑】还是【手机】？"
+    RESPOND "感谢您的首次咨询！为了更好地为您推荐产品，先帮您确定一个方向。"
+    RESPOND "您是想了解【电脑】还是【手机】？"
+    INCREMENT "query_count"
+
+RULE product_query_ask_category_repeat
+WHEN INTENT_IS product_query
+    AND CONTEXT_NOT_SET current_category
+    AND CONTEXT_STAGE_IS "category_select"
+    AND CONTEXT_HAS "query_count"
+THEN
+    SET_STAGE "category_select"
+    RESPOND "我们还没确定您想看【电脑】还是【手机】～"
+    RESPOND "请告诉我：想了解【电脑】还是【手机】？"
 
 ########################################
 # 第二步：电脑子类（笔记本/台式机）
@@ -219,7 +230,7 @@ THEN
     SET_STAGE "series_select"
     RESPOND "🎯 根据您的选择（${product_chain}），为您推荐 MacBook 系列："
     RESPOND "1. MacBook Air - 轻薄便携"
-    RESPOND "2. MacBook Pro - 性能更强" 
+    RESPOND "2. MacBook Pro - 性能更强"
     RESPOND "3. MacBook Pro with M3 - 最新款"
     RESPOND "您对哪一款更感兴趣？可以说 1、2、3 或者具体名称"
 
@@ -296,7 +307,7 @@ THEN
     SET_STAGE "config_select"
     RESPOND "💻 MacBook Air 主要配置："
     RESPOND "1. M2芯片 13.6寸：8,999元起"
-    RESPOND "2. M3芯片 13.6寸：9,999元起" 
+    RESPOND "2. M3芯片 13.6寸：9,999元起"
     RESPOND "3. M3芯片 15.3寸：11,999元起"
     RESPOND "您对哪个尺寸感兴趣？可以说 1、2、3"
 
@@ -348,7 +359,7 @@ THEN
     SET_STAGE "storage_select"
     RESPOND "📦 13.6寸 MacBook Air 可选配置："
     RESPOND "1. 8GB + 256GB SSD：8,999元"
-    RESPOND "2. 8GB + 512GB SSD：10,999元" 
+    RESPOND "2. 8GB + 512GB SSD：10,999元"
     RESPOND "3. 16GB + 512GB SSD：12,999元"
     RESPOND "您需要哪种存储配置？可以说 1、2、3"
 
@@ -384,7 +395,7 @@ THEN
     RESPOND "3. M3 Max芯片：24,999元"
     RESPOND "您需要哪种芯片配置？可以说 1、2、3"
 
-# Pro 16寸 - 修改：只设置stage，不显示选项  
+# Pro 16寸 - 修改：只设置stage，不显示选项
 RULE product_query_set_pro_16
 WHEN INTENT_IS product_query
      AND CONTEXT_EQ current_series = "MacBook Pro"
@@ -411,7 +422,7 @@ THEN
     RESPOND "✅ 已选择 M3 芯片"
     RESPOND "📦 存储配置选项："
     RESPOND "1. 512GB SSD"
-    RESPOND "2. 1TB SSD" 
+    RESPOND "2. 1TB SSD"
     RESPOND "3. 2TB SSD"
     RESPOND "您需要哪种存储容量？"
 
@@ -457,7 +468,7 @@ THEN
     RESPOND "✅ 已选择 8GB + 256GB 配置"
     RESPOND "🎨 MacBook Air 颜色选项："
     RESPOND "1. 深空灰色"
-    RESPOND "2. 银色" 
+    RESPOND "2. 银色"
     RESPOND "3. 星光色"
     RESPOND "4. 午夜色"
     RESPOND "您喜欢哪种颜色？可以说 1、2、3、4"
@@ -788,6 +799,16 @@ THEN
     RESPOND "总价：根据配置定价"
     RESPOND "请提供收货地址和联系方式完成订单"
 
+# 全局重置（cart_operation 意图场景下）
+RULE cart_global_reset_rule
+WHEN INTENT_IS cart_operation
+    AND USER_MENTION_ANY "重置|重新开始"
+THEN
+    RESET_SHOPPING_CONTEXT
+    RESPOND "🔄 好的，让我们重新开始！"
+    RESPOND "您想了解什么产品？可以说：电脑、手机等"
+
+
 # 继续购物 - 使用完整重置
 RULE continue_shopping_rule
 WHEN INTENT_IS cart_operation
@@ -868,5 +889,5 @@ THEN
     RESPOND "抱歉，我没有完全理解您的问题。"
     RESPOND "您可以："
     RESPOND "- 说具体产品名称（如：MacBook Air）"
-    RESPOND "- 说选项数字（如：1、2、3）" 
+    RESPOND "- 说选项数字（如：1、2、3）"
     RESPOND "- 重新描述您的需求"
