@@ -9,48 +9,55 @@ class DSLInterpreter(IInterpreter):
         self.intents = parsed_dsl["intents"]
         self.rules = parsed_dsl["rules"]
 
+    # 在 DSLInterpreter.execute() 方法中添加
     def execute(self, detected_intent: str, context: Dict[str, Any] = None) -> List[str]:
         """根据意图和上下文执行规则"""
-
+        
         responses: List[str] = []
         context = context or {}
-        user_input = context.get("user_input", "").strip()
+        current_stage = context.get('current_stage', 'welcome')
+        user_text = str(context.get('user_input', '')).strip()
 
-        # 智能处理数字选项：基于上下文修正意图
-        if user_input in ['1', '2', '3', '4', '5']:
-            current_stage = context.get('current_stage', '')
-            print(f"检测到数字选项 '{user_input}'，当前阶段: {current_stage}")
-            
-            # 只在购物车相关阶段，才将数字选项修正为cart_operation
-            # 在产品选择阶段，保持为product_query
-            if current_stage in ['cart_added', 'viewing_cart', 'checkout']:
-                if detected_intent == "product_query":
-                    print("购物车阶段：修正意图: product_query → cart_operation")
-                    detected_intent = "cart_operation"
-            else:
-                # 在产品选择阶段，确保数字选项保持为product_query
-                if detected_intent != "product_query":
-                    print(f"产品选择阶段：确保数字选项意图为product_query")
-                    detected_intent = "product_query"
+        cart_stages = {"cart_added", "viewing_cart", "checkout"}
+        if user_text:
+            normalized_text = user_text.lower()
+            if current_stage in cart_stages and (
+                user_text in {"1", "2", "3", "4", "5"} or
+                normalized_text in {"继续", "继续购物", "继续看", "继续浏览", "再看看"}
+            ):
+                detected_intent = "cart_operation"
 
-        # 原有的确认词处理
-        if detected_intent == "product_query" and user_input in ['是', '是的', '好的', '可以', '行']:
-            print("检测到确认词，将意图从product_query改为confirmation")
-            detected_intent = "confirmation"
-
-        # 规则匹配
+        # 1. 直接进行规则匹配
         for rule in self.rules:
             if self._match_rule(rule, detected_intent, context):
-                print(f"匹配规则: {rule['name']}")
                 rule_responses = self._execute_actions(rule["actions"], context)
                 responses.extend(rule_responses)
                 break
-
+        
+        # 2. 如果没有匹配，提供上下文相关的提示
         if not responses:
-            responses.append("抱歉，我没有理解您的问题。请您重新描述。")
-
+            responses.extend(self._get_context_aware_fallback(current_stage, context))
+        
         return responses
-    
+
+    def _get_context_aware_fallback(self, current_stage: str, context: Dict[str, Any]) -> List[str]:
+        """根据当前阶段提供智能回退提示"""
+        fallback_messages = {
+            "category_select": "请告诉我您想了解【电脑】还是【手机】？",
+            "subtype_select": "您更偏向【笔记本】还是【台式机】？",
+            "brand_select": f"请选择{context.get('current_subtype') or context.get('current_category', '产品')}的品牌",
+            "series_select": f"请选择{context.get('current_brand', '')}的具体系列",
+            "config_select": "请选择具体的配置选项",
+            "phone_model_select": "请选择您感兴趣的 iPhone 型号，可以说 1、2、3。",
+            "phone_storage_select": "请选择需要的存储容量，例如 256GB。",
+            "phone_color_select": "请选择喜欢的机身颜色，例如黑色、白色。",
+            "default": "抱歉，我没有理解。您可以重新描述需求，或说'重新开始'来重置对话。"
+        }
+        
+        message = fallback_messages.get(current_stage, fallback_messages["default"])
+        return [message]
+        
+        
     def _match_rule(self, rule: Dict, detected_intent: str, context: Dict[str, Any]) -> bool:
         """检查规则是否匹配，支持意图和上下文条件"""
         
@@ -59,7 +66,7 @@ class DSLInterpreter(IInterpreter):
 
         for condition in rule["conditions"]:
             ctype = condition["type"]
-            print(f"检查条件: {ctype} - {condition}")
+            """print(f"检查条件: {ctype} - {condition}")"""
 
             if ctype == "intent":
                 if condition.get("intent_name") != detected_intent:
@@ -138,7 +145,7 @@ class DSLInterpreter(IInterpreter):
                     context_manager.reset_shopping_context()
                 else:
                     # 后备方案：手动重置关键变量
-                    reset_vars = ["current_category", "current_brand", "current_series", "product_chain"]
+                    reset_vars = ["current_category", "current_subtype", "current_brand", "current_series", "product_chain"]
                     for var in reset_vars:
                         context_manager.update_context(var, None)
                     context_manager.set_stage("welcome")
@@ -152,6 +159,7 @@ class DSLInterpreter(IInterpreter):
 
         replacements = {
             "current_category": str(context.get("current_category", "")),
+            "current_subtype": str(context.get("current_subtype", "")),
             "current_brand": str(context.get("current_brand", "")),
             "current_series": str(context.get("current_series", "")),
             "query_count": str(context.get("query_count", 0)),

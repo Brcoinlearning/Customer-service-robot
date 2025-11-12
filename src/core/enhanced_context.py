@@ -23,6 +23,7 @@ class EnhancedConversationContext(IContextManager):
             # 产品选择链
             "product_chain": [],
             "current_category": None,
+            "current_subtype": None,
             "current_brand": None,
             "current_series": None,
             
@@ -54,15 +55,22 @@ class EnhancedConversationContext(IContextManager):
             "value": item_value,
             "timestamp": time.time()
         }
+        hierarchy = {
+            "category": 0,
+            "subtype": 1,
+            "brand": 2,
+            "series": 3
+        }
+
+        level = hierarchy.get(item_type, 99)
+        filtered_chain = []
+        for item in self._context["product_chain"]:
+            if hierarchy.get(item["type"], 99) < level:
+                filtered_chain.append(item)
+
+        self._context["product_chain"] = filtered_chain
         self._context["product_chain"].append(chain_item)
-        
-        # 更新当前选择
-        if item_type == "category":
-            self._context["current_category"] = item_value
-        elif item_type == "brand":
-            self._context["current_brand"] = item_value
-        elif item_type == "series":
-            self._context["current_series"] = item_value
+        self._recalculate_current_choices()
     
     def get_current_chain(self) -> List[Dict]:
         """获取当前选择链"""
@@ -79,6 +87,7 @@ class EnhancedConversationContext(IContextManager):
         if steps >= len(self._context["product_chain"]):
             self._context["product_chain"] = []
             self._context["current_category"] = None
+            self._context["current_subtype"] = None
             self._context["current_brand"] = None
             self._context["current_series"] = None
         else:
@@ -90,12 +99,15 @@ class EnhancedConversationContext(IContextManager):
     def _recalculate_current_choices(self):
         """根据选择链重新计算当前选择"""
         self._context["current_category"] = None
+        self._context["current_subtype"] = None
         self._context["current_brand"] = None
         self._context["current_series"] = None
         
         for item in self._context["product_chain"]:
             if item["type"] == "category":
                 self._context["current_category"] = item["value"]
+            elif item["type"] == "subtype":
+                self._context["current_subtype"] = item["value"]
             elif item["type"] == "brand":
                 self._context["current_brand"] = item["value"]
             elif item["type"] == "series":
@@ -140,6 +152,7 @@ class EnhancedConversationContext(IContextManager):
             "query_count": self._context["query_count"],
             "current_selection": {
                 "category": self._context["current_category"],
+                "subtype": self._context["current_subtype"],
                 "brand": self._context["current_brand"],
                 "series": self._context["current_series"]
             }
@@ -166,6 +179,7 @@ class EnhancedConversationContext(IContextManager):
             # 产品选择链 - 完全清空
             "product_chain": [],
             "current_category": None,
+            "current_subtype": None,
             "current_brand": None,
             "current_series": None,
             

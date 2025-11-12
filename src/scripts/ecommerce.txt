@@ -15,6 +15,49 @@ THEN
     RESPOND "可以跟我说：想买电脑 / 手机 等。"
 
 ########################################
+# 全局重置和切换规则（高优先级）
+########################################
+
+# 重置对话 - 高优先级
+RULE global_reset_rule
+WHEN INTENT_IS product_query
+    AND USER_MENTION_ANY "重新开始|重置|重新选|换一个|不要这个|重新来"
+THEN
+    RESET_SHOPPING_CONTEXT
+    SET_STAGE "welcome"
+    RESPOND "好的，让我们重新开始！"
+    RESPOND "您想了解【电脑】还是【手机】？"
+
+# 切换到大类 - 高优先级  
+RULE switch_to_phone_rule
+WHEN INTENT_IS product_query
+    AND USER_MENTION_ANY "手机|iphone|华为手机|小米手机"
+    AND CONTEXT_NOT_EQ current_category = "手机"
+    AND CONTEXT_NOT_STAGE_IS "welcome"
+THEN
+    RESET_SHOPPING_CONTEXT
+    SET_VAR current_category = "手机"
+    ADD_TO_CHAIN type = "category" value = "手机"
+    SET_STAGE "brand_select"
+    RESPOND "检测到您想改为了解手机，已为您切换！"
+    RESPOND "目前主流手机品牌有：苹果、华为、小米、三星等。"
+    RESPOND "您更倾向哪个品牌？"
+
+RULE switch_to_computer_rule
+WHEN INTENT_IS product_query
+    AND USER_MENTION_ANY "电脑|计算机|笔记本|台式机|macbook"
+    AND CONTEXT_NOT_EQ current_category = "电脑" 
+    AND CONTEXT_NOT_STAGE_IS "welcome"
+THEN
+    RESET_SHOPPING_CONTEXT
+    SET_VAR current_category = "电脑"
+    ADD_TO_CHAIN type = "category" value = "电脑"
+    SET_STAGE "subtype_select"
+    RESPOND "检测到您想改为了解电脑，已为您切换！"
+    RESPOND "目前我们有：笔记本电脑、台式机。"
+    RESPOND "您更偏向【笔记本】还是【台式机】？"
+
+########################################
 # 第一步：明确大类（电脑/手机等）
 ########################################
 
@@ -501,15 +544,6 @@ THEN
     RESPOND "2. 立即结算"
     RESPOND "3. 清空购物车"
 
-# 继续购物
-RULE continue_shopping_rule
-WHEN INTENT_IS cart_operation
-    AND USER_MENTION_ANY "继续购物|继续浏览|再看看|继续看|浏览其他|1|第一个"
-THEN
-    RESET_SHOPPING
-    RESPOND "🔄 好的，让我们重新开始！"
-    RESPOND "您想了解什么产品？可以说：电脑、手机等"
-
 # 立即结算
 RULE checkout_rule
 WHEN INTENT_IS cart_operation
@@ -521,12 +555,21 @@ THEN
     RESPOND "总价：根据配置定价"
     RESPOND "请提供收货地址和联系方式完成订单"
 
-# 清空购物车
+# 继续购物 - 使用完整重置
+RULE continue_shopping_rule
+WHEN INTENT_IS cart_operation
+    AND USER_MENTION_ANY "继续购物|继续浏览|再看看|继续看|浏览其他|1|第一个"
+THEN
+    RESET_SHOPPING_CONTEXT
+    RESPOND "🔄 好的，让我们重新开始！"
+    RESPOND "您想了解什么产品？可以说：电脑、手机等"
+
+# 清空购物车 - 使用完整重置
 RULE clear_cart_rule
 WHEN INTENT_IS cart_operation
     AND USER_MENTION_ANY "清空购物车|清空|删除|移除|3|第三个"
 THEN
-    RESET_SHOPPING
+    RESET_SHOPPING_CONTEXT
     RESPOND "🗑️ 已清空购物车"
     RESPOND "让我们重新开始选择产品吧！"
     RESPOND "您想了解什么产品？可以说：电脑、手机等"

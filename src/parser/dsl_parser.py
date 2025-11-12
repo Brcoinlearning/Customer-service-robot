@@ -178,4 +178,22 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
                     'item_value': match.group(2)
                 })
             else:
-                raise SyntaxError(f"Line {line_num}: Invalid ADD_TO_CHAIN action: {line}")  
+                # 支持简写语法：ADD_TO_CHAIN "category" "电脑"
+                short_match = re.match(r'ADD_TO_CHAIN\s+"([^"]+)"\s+"([^"]+)"', line)
+                if short_match:
+                    current_rule['actions'].append({
+                        'type': 'add_to_chain',
+                        'item_type': short_match.group(1),
+                        'item_value': short_match.group(2)
+                    })
+                else:
+                    raise SyntaxError(f"Line {line_num}: Invalid ADD_TO_CHAIN action: {line}")  
+        elif line.startswith('INCREMENT'):
+            match = re.match(r'INCREMENT\s+"([^"]+)"', line)
+            if match:
+                current_rule['actions'].append({
+                    'type': 'increment',
+                    'var_name': match.group(1)
+                })
+            else:
+                raise SyntaxError(f"Line {line_num}: Invalid INCREMENT action: {line}")
