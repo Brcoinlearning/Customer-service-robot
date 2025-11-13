@@ -8,6 +8,16 @@ class DSLInterpreter(IInterpreter):
     def __init__(self, parsed_dsl: Dict[str, Any]):
         self.intents = parsed_dsl["intents"]
         self.rules = parsed_dsl["rules"]
+        # 动作类型到处理函数的映射，便于后续扩展新动作
+        self._action_handlers = {
+            "respond": self._handle_respond,
+            "set_variable": self._handle_set_variable,
+            "set_stage": self._handle_set_stage,
+            "add_to_chain": self._handle_add_to_chain,
+            "increment": self._handle_increment,
+            "record_preference": self._handle_record_preference,
+            "reset_shopping_context": self._handle_reset_shopping_context,
+        }
 
     # 在 DSLInterpreter.execute() 方法中添加
     def execute(self, detected_intent: str, context: Dict[str, Any] = None) -> List[str]:
@@ -132,45 +142,66 @@ class DSLInterpreter(IInterpreter):
         context_manager = context.get("_manager")
 
         for action in actions:
-            atype = action["type"]
+            atype = action.get("type")
+            handler = self._action_handlers.get(atype)
+            if not handler:
+                continue
 
-            if atype == "respond":
-                message = action.get("message", "")
-                message = self._replace_variables(message, context)
-                responses.append(message)
-
-            elif atype == "set_variable" and context_manager:
-                context_manager.update_context(action["var_name"], action["value"])
-
-            elif atype == "set_stage" and context_manager:
-                context_manager.set_stage(action["stage"])
-
-            elif atype == "add_to_chain" and context_manager:
-                context_manager.add_to_chain(action["item_type"], action["item_value"])
-
-            elif atype == "increment" and context_manager:
-                var_name = action["var_name"]
-                current_value = context_manager.get_context().get(var_name, 0)
-                context_manager.update_context(var_name, current_value + 1)
-
-            elif atype == "record_preference" and context_manager:
-                context_manager.record_preference(action["key"], action["value"])
-
-            # 新增：完整重置购物上下文
-            elif atype == "reset_shopping_context" and context_manager:
-                if hasattr(context_manager, 'reset_shopping_context'):
-                    context_manager.reset_shopping_context()
-                else:
-                    # 后备方案：手动重置关键变量
-                    reset_vars = ["current_category", "current_subtype", "current_brand", "current_series", "product_chain"]
-                    for var in reset_vars:
-                        context_manager.update_context(var, None)
-                    context_manager.set_stage("welcome")
-                    print("⚠️ 使用后备方案重置上下文")
+            result = handler(action, context, context_manager)
+            if isinstance(result, list):
+                responses.extend(result)
 
         return responses
-    
-   
+
+    # 以下为各类动作的具体处理函数，便于后续扩展
+    def _handle_respond(self, action: Dict[str, Any], context: Dict[str, Any], context_manager: Any) -> List[str]:
+        message = action.get("message", "")
+        message = self._replace_variables(message, context)
+        return [message]
+
+    def _handle_set_variable(self, action: Dict[str, Any], context: Dict[str, Any], context_manager: Any) -> List[str]:
+        if context_manager:
+            context_manager.update_context(action["var_name"], action["value"])
+        return []
+
+    def _handle_set_stage(self, action: Dict[str, Any], context: Dict[str, Any], context_manager: Any) -> List[str]:
+        if context_manager:
+            context_manager.set_stage(action["stage"])
+        return []
+
+    def _handle_add_to_chain(self, action: Dict[str, Any], context: Dict[str, Any], context_manager: Any) -> List[str]:
+        if context_manager:
+            context_manager.add_to_chain(action["item_type"], action["item_value"])
+        return []
+
+    def _handle_increment(self, action: Dict[str, Any], context: Dict[str, Any], context_manager: Any) -> List[str]:
+        if context_manager:
+            var_name = action["var_name"]
+            current_value = context_manager.get_context().get(var_name, 0)
+            context_manager.update_context(var_name, current_value + 1)
+        return []
+
+    def _handle_record_preference(self, action: Dict[str, Any], context: Dict[str, Any], context_manager: Any) -> List[str]:
+        if context_manager:
+            context_manager.record_preference(action["key"], action["value"])
+        return []
+
+    def _handle_reset_shopping_context(self, action: Dict[str, Any], context: Dict[str, Any], context_manager: Any) -> List[str]:
+        if not context_manager:
+            return []
+
+        if hasattr(context_manager, 'reset_shopping_context'):
+            context_manager.reset_shopping_context()
+        else:
+            # 后备方案：手动重置关键变量
+            reset_vars = ["current_category", "current_subtype", "current_brand", "current_series", "product_chain"]
+            for var in reset_vars:
+                context_manager.update_context(var, None)
+            context_manager.set_stage("welcome")
+            print("⚠️ 使用后备方案重置上下文")
+
+        return []
+
     def _replace_variables(self, message: str, context: Dict[str, Any]) -> str:
         """替换消息中的变量占位符"""
 
