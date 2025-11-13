@@ -98,6 +98,26 @@
 
 > 下面一节开始的 BNF 为**初版 DSL 语法定义（历史版本）**，主要用于展示最初的抽象设计思路，与当前实现存在一定差异。实际使用 DSL 时，应以本节给出的“当前实现版 DSL 语法概览”为准。
 
+
+#### 2.4 上下文兜底 fallback 规则（当前实现）
+
+在当前实现中，我们将“按阶段给出兜底提示”的逻辑从 Python 代码迁移到了 DSL：
+
+- 新增意图 `INTENT fallback: "上下文兜底提示"`，作为一类特殊的“系统意图”。
+- 在 `ecommerce.dsl` 中约定：**所有以 `fallback_` 开头的规则名（如 `fallback_category_select`）都是兜底规则**，其条件通常只依赖对话阶段和上下文变量：
+  - 例如 `CONTEXT_STAGE_IS "brand_select"`、`CONTEXT_HAS "current_category"` 等。
+- 解释器在执行流程中：
+  1. 先按正常意图（如 `product_query`、`cart_operation` 等）依次匹配业务规则；
+  2. 如果**没有任何业务规则命中**，则调用 `_get_context_aware_fallback`，以 `detected_intent = "fallback"` 再走一遍规则匹配，只考虑 `fallback_*` 规则；
+  3. 若仍无匹配，则返回一条通用的提示（鼓励用户重述或说“重新开始”）。
+- 典型兜底规则示例：
+  - `fallback_category_select`：在 `category_select` 阶段提示“请告诉我您想了解【电脑】还是【手机】？”。
+  - `fallback_brand_select_with_subtype` / `_with_category` / `_generic`：根据是否已有 `current_subtype` / `current_category`，智能选择“请选择笔记本/台式机/手机的品牌”等不同文案。
+  - `fallback_default`：不依赖阶段的最后兜底规则，保证即使上下文异常也能给出友好提示。
+
+通过这一设计，**上下文相关的兜底话术全部收敛到 DSL 脚本中**，解释器只负责“在何时触发 fallback”，而不再硬编码具体文案，便于后续根据场景统一调整提示内容。
+
+
 ### 3. 初版 DSL 语法定义（BNF格式，历史版本）
 
 ```

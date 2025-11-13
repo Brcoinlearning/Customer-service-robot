@@ -51,22 +51,32 @@ class DSLInterpreter(IInterpreter):
         return responses
 
     def _get_context_aware_fallback(self, current_stage: str, context: Dict[str, Any]) -> List[str]:
-        """根据当前阶段提供智能回退提示"""
-        fallback_messages = {
-            "category_select": "请告诉我您想了解【电脑】还是【手机】？",
-            "subtype_select": "您更偏向【笔记本】还是【台式机】？",
-            "brand_select": f"请选择{context.get('current_subtype') or context.get('current_category', '产品')}的品牌",
-            "series_select": f"请选择{context.get('current_brand', '')}的具体系列",
-            "config_select": "请选择具体的配置选项",
-            "phone_model_select": "请选择您感兴趣的 iPhone 型号，可以说 1、2、3。",
-            "phone_storage_select": "请选择需要的存储容量，例如 256GB。",
-            "phone_color_select": "请选择喜欢的机身颜色，例如黑色、白色。",
-            "default": "抱歉，我没有理解。您可以重新描述需求，或说'重新开始'来重置对话。"
-        }
-        
-        message = fallback_messages.get(current_stage, fallback_messages["default"])
-        return [message]
-        
+        """根据当前阶段提供智能回退提示
+
+        优先使用 DSL 中以 `fallback_` 开头的规则（INTENT_IS fallback），
+        若未命中任何规则，再退回到一个通用提示，保证系统健壮性。
+        """
+
+        responses: List[str] = []
+
+        # 1. 先尝试使用 DSL 中的 fallback 规则
+        for rule in self.rules:
+            name = rule.get("name")
+            if not isinstance(name, str) or not name.startswith("fallback_"):
+                continue
+
+            if self._match_rule(rule, "fallback", context):
+                rule_responses = self._execute_actions(rule["actions"], context)
+                responses.extend(rule_responses)
+                if responses:
+                    break
+
+        if responses:
+            return responses
+
+        # 2. 如果 DSL 中没有定义对应的 fallback 规则，则提供一个简短通用提示
+        return ["抱歉，我没有理解。您可以重新描述需求，或说'重新开始'来重置对话。"]
+
         
     def _match_rule(self, rule: Dict, detected_intent: str, context: Dict[str, Any]) -> bool:
         """检查规则是否匹配，支持意图和上下文条件"""

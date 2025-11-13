@@ -265,6 +265,33 @@ def test_cart_operation_reset_with_reset_keyword():
     assert new_ctx["product_chain"] == []
     assert any("重新开始" in r for r in responses)
 
+
+
+def test_fallback_brand_select_from_dsl():
+    """当在品牌选择阶段输入无法匹配的内容时，应触发 DSL 中的 fallback 规则"""
+    dsl_path = os.path.join(project_root, 'src', 'scripts', 'ecommerce.dsl')
+    with open(dsl_path, 'r', encoding='utf-8') as f:
+        dsl_content = f.read()
+
+    parser = DSLParser()
+    parsed_dsl = parser.parse(dsl_content)
+    interpreter = DSLInterpreter(parsed_dsl)
+
+    # 模拟已经进入手机品牌选择阶段，但用户输入了一句无法匹配任何品牌的内容
+    context_manager = EnhancedConversationContext()
+    context_manager.update_context("current_category", "手机")
+    context_manager.set_stage("brand_select")
+
+    ctx = context_manager.get_context()
+    ctx["_manager"] = context_manager
+    ctx["user_input"] = "随便说点什么，故意不包含品牌关键词"
+
+    responses = interpreter.execute("product_query", ctx)
+
+    # 应该触发 fallback_brand_select_* 规则，而不是 Python 内置字典
+    # 这里期望出现“手机”的品牌提示文案
+    assert any("手机" in r and "品牌" in r for r in responses)
+
 if __name__ == "__main__":
     print("🚀 开始记忆功能测试套件...")
 

@@ -4,6 +4,7 @@ INTENT order_status: "订单状态查询"
 INTENT complaint: "投诉建议"
 INTENT cart_operation: "购物车操作"
 INTENT confirmation: "确认性回答"  # 新增确认意图
+INTENT fallback: "上下文兜底提示"
 ########################################
 # 电子产品购买多轮咨询场景
 ########################################
@@ -865,6 +866,90 @@ THEN
     SET_STAGE "welcome"
     RESPOND "👌 好的，了解。"
     RESPOND "您想了解什么其他产品？可以说：电脑、手机等"
+########################################
+# 上下文兜底提示（fallback 规则）
+########################################
+
+# 大类选择阶段：请用户在电脑/手机之间选择
+RULE fallback_category_select
+WHEN INTENT_IS fallback
+    AND CONTEXT_STAGE_IS "category_select"
+THEN
+    RESPOND "请告诉我您想了解【电脑】还是【手机】？"
+
+# 子类选择阶段：请用户在笔记本/台式机之间选择
+RULE fallback_subtype_select
+WHEN INTENT_IS fallback
+    AND CONTEXT_STAGE_IS "subtype_select"
+THEN
+    RESPOND "您更偏向【笔记本】还是【台式机】？"
+
+# 品牌选择阶段：优先使用子类，其次使用大类，最后使用通用“产品”
+RULE fallback_brand_select_with_subtype
+WHEN INTENT_IS fallback
+    AND CONTEXT_STAGE_IS "brand_select"
+    AND CONTEXT_HAS "current_subtype"
+THEN
+    RESPOND "请选择${current_subtype}的品牌"
+
+RULE fallback_brand_select_with_category
+WHEN INTENT_IS fallback
+    AND CONTEXT_STAGE_IS "brand_select"
+    AND CONTEXT_NOT_SET current_subtype
+    AND CONTEXT_HAS "current_category"
+THEN
+    RESPOND "请选择${current_category}的品牌"
+
+RULE fallback_brand_select_generic
+WHEN INTENT_IS fallback
+    AND CONTEXT_STAGE_IS "brand_select"
+    AND CONTEXT_NOT_SET current_subtype
+    AND CONTEXT_NOT_SET current_category
+THEN
+    RESPOND "请选择产品的品牌"
+
+# 系列选择阶段
+RULE fallback_series_select
+WHEN INTENT_IS fallback
+    AND CONTEXT_STAGE_IS "series_select"
+THEN
+    RESPOND "请选择${current_brand}的具体系列"
+
+# 配置选择阶段
+RULE fallback_config_select
+WHEN INTENT_IS fallback
+    AND CONTEXT_STAGE_IS "config_select"
+THEN
+    RESPOND "请选择具体的配置选项"
+
+# 苹果手机型号选择阶段
+RULE fallback_phone_model_select
+WHEN INTENT_IS fallback
+    AND CONTEXT_STAGE_IS "phone_model_select"
+THEN
+    RESPOND "请选择您感兴趣的 iPhone 型号，可以说 1、2、3。"
+
+# 苹果手机容量选择阶段
+RULE fallback_phone_storage_select
+WHEN INTENT_IS fallback
+    AND CONTEXT_STAGE_IS "phone_storage_select"
+THEN
+    RESPOND "请选择需要的存储容量，例如 256GB。"
+
+# 苹果手机颜色选择阶段
+RULE fallback_phone_color_select
+WHEN INTENT_IS fallback
+    AND CONTEXT_STAGE_IS "phone_color_select"
+THEN
+    RESPOND "请选择喜欢的机身颜色，例如黑色、白色。"
+
+# 默认兜底提示
+RULE fallback_default
+WHEN INTENT_IS fallback
+THEN
+    RESPOND "抱歉，我没有理解。您可以重新描述需求，或说'重新开始'来重置对话。"
+
+
 
 ########################################
 # 通用：订单、投诉、兜底
