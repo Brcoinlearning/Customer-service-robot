@@ -27,6 +27,16 @@ class EnhancedConversationContext(IContextManager):
             "current_brand": None,
             "current_series": None,
             
+            # 餐饮预订相关字段
+            "party_size": None,
+            "private_room": None,
+            "selected_date": None,
+            "selected_time": None,
+            "selected_config_index": None,
+            "budget": None,
+            "contact": None,
+            "date_options": None,
+            
             # 用户偏好
             "user_preferences": {},
             "budget_range": None,

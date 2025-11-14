@@ -154,7 +154,16 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
 
     def _parse_action(self, line: str, current_rule: Dict, line_num: int):
         """解析动作"""
-        if line.startswith('RESPOND'):
+        if line.startswith('RESPOND_KB'):
+            match = re.match(r'RESPOND_KB\s+"([^"]+)"', line)
+            if match:
+                current_rule['actions'].append({
+                    'type': 'respond_kb',
+                    'template_key': match.group(1)
+                })
+            else:
+                raise SyntaxError(f"Line {line_num}: Invalid RESPOND_KB action: {line}")
+        elif line.startswith('RESPOND'):
             match = re.match(r'RESPOND\s+"([^"]+)"', line)
             if match:
                 current_rule['actions'].append({
@@ -216,3 +225,23 @@ class DSLParser(IDSLParser):  # 改为实现IDSLParser接口
                 })
             else:
                 raise SyntaxError(f"Line {line_num}: Invalid INCREMENT action: {line}")
+        elif line.startswith('SUGGEST_BRANDS'):
+            # 基于知识库动态列出当前品类下的品牌
+            current_rule['actions'].append({
+                'type': 'suggest_brands'
+            })
+        elif line.startswith('SUGGEST_SERIES'):
+            # 基于知识库动态列出当前品类+品牌下的系列/型号
+            current_rule['actions'].append({
+                'type': 'suggest_series'
+            })
+        elif line.startswith('DESCRIBE_SERIES_CONFIG'):
+            # 基于知识库动态列出当前品类+品牌+系列下的配置选项
+            current_rule['actions'].append({
+                'type': 'describe_series_config'
+            })
+        elif line.startswith('SUGGEST_DATES'):
+            # 生成未来三天的日期选项
+            current_rule['actions'].append({
+                'type': 'suggest_dates'
+            })

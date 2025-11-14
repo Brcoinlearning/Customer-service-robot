@@ -65,6 +65,9 @@
                 | "ADD_TO_CHAIN" "type" "=" <string_literal> "value" "=" <string_literal>
                 | "ADD_TO_CHAIN" <string_literal> <string_literal>    ; 精简写法，等价于指定 type + value
                 | "INCREMENT" <identifier>
+                | "SUGGEST_BRANDS"           ; 基于当前品类，调用 ProductKnowledge 列出品牌
+                | "SUGGEST_SERIES"           ; 基于当前品类+品牌，调用 ProductKnowledge 列出系列/型号
+                | "DESCRIBE_SERIES_CONFIG"   ; 基于当前品类+品牌+系列，调用 ProductKnowledge 列出配置选项
 
 <identifier> ::= [a-zA-Z_][a-zA-Z0-9_]*
 

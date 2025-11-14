@@ -6,14 +6,13 @@ INTENT cart_operation: "购物车操作"
 INTENT confirmation: "确认性回答"  # 新增确认意图
 INTENT fallback: "上下文兜底提示"
 ########################################
-# 电子产品购买多轮咨询场景
+# 苹果专卖店
 ########################################
 
 RULE greeting_rule
 WHEN INTENT_IS greeting
 THEN
-    RESPOND "您好！欢迎来到智能电子产品客服中心。"
-    RESPOND "可以跟我说：想买电脑 / 手机 等。"
+    RESPOND_KB "greeting_intro"
 
 ########################################
 # 全局重置和切换规则（高优先级）
@@ -22,16 +21,17 @@ THEN
 # 从电脑切换到手机
 RULE switch_computer_to_phone
 WHEN INTENT_IS product_query
-    AND USER_MENTION_ANY "手机|还是买手机|换成手机|改为手机"
+    AND USER_MENTION_ANY "手机|还是买手机|换成手机|改为手机|还是手机|买手机吧|手机吧"
     AND CONTEXT_EQ current_category = "电脑"
 THEN
     RESET_SHOPPING_CONTEXT
     SET_VAR current_category = "手机"
     ADD_TO_CHAIN type = "category" value = "手机"
-    SET_STAGE "brand_select"
-    RESPOND "检测到您想改为了解手机，已为您切换！"
-    RESPOND "目前主流手机品牌有：苹果、华为、小米、三星等。"
-    RESPOND "您更倾向哪个品牌？"
+    SET_VAR current_brand = "苹果"
+    ADD_TO_CHAIN type = "brand" value = "苹果"
+    SET_STAGE "series_select"
+    RESPOND_KB "switch_to_phone_done"
+    SUGGEST_SERIES
 
 # 从手机切换到电脑
 RULE switch_phone_to_computer
@@ -43,9 +43,7 @@ THEN
     SET_VAR current_category = "电脑"
     ADD_TO_CHAIN type = "category" value = "电脑"
     SET_STAGE "subtype_select"
-    RESPOND "检测到您想改为了解电脑，已为您切换！"
-    RESPOND "目前我们有：笔记本电脑、台式机。"
-    RESPOND "您更偏向【笔记本】还是【台式机】？"
+    RESPOND_KB "switch_to_computer_prompt"
 
 # 通用重置规则
 RULE global_reset_rule
@@ -54,10 +52,17 @@ WHEN INTENT_IS product_query
 THEN
     RESET_SHOPPING_CONTEXT
     SET_STAGE "welcome"
-    RESPOND "好的，让我们重新开始！"
-    RESPOND "您想了解【电脑】还是【手机】？"
+    RESPOND_KB "global_reset_prompt"
 
 ########################################
+# 非苹果品牌兜底处理：统一说明仅支持 Apple 产品
+RULE product_query_non_apple_brand
+WHEN INTENT_IS product_query
+    AND USER_MENTION_ANY "联想|lenovo|戴尔|dell|华为|huawei|小米|红米|mi|oppo|vivo|荣耀|honor|三星|sony|索尼|惠普|hp|华硕|asus"
+THEN
+    RESPOND_KB "non_apple_brand_fallback"
+
+
 # 第一步：明确大类（电脑/手机等）
 ########################################
 
@@ -70,8 +75,7 @@ THEN
     SET_VAR current_category = "电脑"
     ADD_TO_CHAIN type = "category" value = "电脑"
     SET_STAGE "subtype_select"
-    RESPOND "好的，您想买电脑。目前我们有：笔记本电脑、台式机。"
-    RESPOND "您更偏向【笔记本】还是【台式机】？"
+    RESPOND_KB "computer_subtype_prompt"
 
 # 手机大类 - 增强：支持多种表达方式
 RULE product_query_set_category_phone
@@ -81,9 +85,26 @@ WHEN INTENT_IS product_query
 THEN
     SET_VAR current_category = "手机"
     ADD_TO_CHAIN type = "category" value = "手机"
-    SET_STAGE "brand_select"
-    RESPOND "好的，您想买手机。目前主流品牌有：苹果、华为、小米、三星等。"
-    RESPOND "您更倾向哪个品牌？"
+    SET_VAR current_brand = "苹果"
+    ADD_TO_CHAIN type = "brand" value = "苹果"
+    SET_STAGE "series_select"
+    RESPOND_KB "phone_category_confirm"
+    SUGGEST_SERIES
+
+# iPad / 平板大类 - 直接进入苹果品牌的系列选择
+RULE product_query_set_category_ipad
+WHEN INTENT_IS product_query
+    AND USER_MENTION_ANY "iPad|ipad|平板|平板电脑"
+    AND CONTEXT_NOT_SET current_category
+THEN
+    SET_VAR current_category = "平板"
+    ADD_TO_CHAIN type = "category" value = "平板"
+    SET_VAR current_brand = "苹果"
+    ADD_TO_CHAIN type = "brand" value = "苹果"
+    SET_STAGE "series_select"
+    RESPOND_KB "ipad_category_confirm"
+    SUGGEST_SERIES
+
 
 # 兜底：询问大类（根据 query_count 区分首次/重复）
 RULE product_query_ask_category_first_time
@@ -93,8 +114,7 @@ WHEN INTENT_IS product_query
     AND CONTEXT_HAS "query_count" = 0
 THEN
     SET_STAGE "category_select"
-    RESPOND "感谢您的首次咨询！为了更好地为您推荐产品，先帮您确定一个方向。"
-    RESPOND "您是想了解【电脑】还是【手机】？"
+    RESPOND_KB "ask_category_first"
     INCREMENT "query_count"
 
 RULE product_query_ask_category_repeat
@@ -104,36 +124,37 @@ WHEN INTENT_IS product_query
     AND CONTEXT_HAS "query_count"
 THEN
     SET_STAGE "category_select"
-    RESPOND "我们还没确定您想看【电脑】还是【手机】～"
-    RESPOND "请告诉我：想了解【电脑】还是【手机】？"
+    RESPOND_KB "ask_category_repeat"
 
 ########################################
 # 第二步：电脑子类（笔记本/台式机）
 ########################################
 
-# 笔记本选择 - 增强：支持口语化表达和数字选择
-RULE product_query_set_subtype_laptop
-WHEN INTENT_IS product_query
-     AND CONTEXT_EQ current_category = "电脑"
-     AND USER_MENTION_ANY "笔记本|笔记本电脑|手提电脑|macbook|air|pro|m3|1|第一个"
-THEN
-    SET_VAR current_subtype = "笔记本"
-    ADD_TO_CHAIN type = "subtype" value = "笔记本"
-    SET_STAGE "brand_select"
-    RESPOND "了解～您想要的笔记本品牌有很多。"
-    RESPOND "您更倾向哪个品牌？比如：联想、戴尔、苹果、华为等。"
+# 子类选择由解释器快捷识别层处理（笔记本/台式机自动归类并切换到品牌选择阶段）
 
-# 台式机选择 - 增强：支持口语化表达
-RULE product_query_set_subtype_desktop
+########################################
+# 通用：基于知识库的品牌/系列动态推荐
+########################################
+
+# 品牌列表：基于当前品类的动态品牌推荐
+RULE product_query_list_brands_dynamic
 WHEN INTENT_IS product_query
-     AND CONTEXT_EQ current_category = "电脑"
-     AND USER_MENTION_ANY "台式机|台式电脑|桌面电脑|2|第二个"
+    AND CONTEXT_STAGE_IS "brand_select"
+    AND CONTEXT_HAS "current_category"
+    AND USER_MENTION_ANY "有哪些品牌|推荐品牌|品牌有哪些"
 THEN
-    SET_VAR current_subtype = "台式机"
-    ADD_TO_CHAIN type = "subtype" value = "台式机"
-    SET_STAGE "brand_select"
-    RESPOND "好的，台式机性能更强。主要品牌有："
-    RESPOND "联想、戴尔、惠普、华硕等。您偏好哪个品牌？"
+    SUGGEST_BRANDS
+
+# 系列列表：基于当前品类+品牌的动态系列/型号推荐
+RULE product_query_list_series_dynamic
+WHEN INTENT_IS product_query
+    AND CONTEXT_STAGE_IS "series_select"
+    AND CONTEXT_HAS "current_category"
+    AND CONTEXT_HAS "current_brand"
+    AND USER_MENTION_ANY "有哪些系列|推荐系列|推荐型号"
+THEN
+    SUGGEST_SERIES
+
 
 ########################################
 # 第三步：笔记本品牌选择
@@ -153,143 +174,167 @@ THEN
     SET_VAR current_brand = "苹果"
     ADD_TO_CHAIN type = "brand" value = "苹果"
     SET_STAGE "series_select"
-    RESPOND "🎯 根据您的选择（${product_chain}），为您推荐 MacBook 系列："
-    RESPOND "1. MacBook Air - 轻薄便携"
-    RESPOND "2. MacBook Pro - 性能更强"
-    RESPOND "3. MacBook Pro with M3 - 最新款"
-    RESPOND "您对哪一款更感兴趣？可以说 1、2、3 或者具体名称"
+    SUGGEST_SERIES
 
-RULE product_query_direct_brand_lenovo
+
+
+# 苹果台式机品牌选择 - 针对“台式机”子类
+RULE product_query_set_brand_apple_desktop
 WHEN INTENT_IS product_query
-     AND CONTEXT_EQ current_category = "电脑"
-     AND CONTEXT_NOT_SET current_subtype
-     AND CONTEXT_NOT_SET current_brand
-     AND CONTEXT_STAGE_IS "subtype_select"
-     AND USER_MENTION_ANY "联想|lenovo|thinkpad"
+    AND CONTEXT_EQ current_category = "电脑"
+    AND CONTEXT_EQ current_subtype = "台式机"
+    AND USER_MENTION_ANY "苹果|apple|imac|mac mini|mac studio|1|第一个"
+    AND CONTEXT_NOT_SET current_brand
+    AND CONTEXT_STAGE_IS "brand_select"
 THEN
-    SET_VAR current_subtype = "笔记本"
-    ADD_TO_CHAIN type = "subtype" value = "笔记本"
-    SET_VAR current_brand = "联想"
-    ADD_TO_CHAIN type = "brand" value = "联想"
+    SET_VAR current_brand = "苹果"
+    ADD_TO_CHAIN type = "brand" value = "苹果"
     SET_STAGE "series_select"
-    RESPOND "🎯 根据您的选择（${product_chain}），为您推荐联想笔记本系列："
-    RESPOND "1. ThinkPad X1 Carbon - 商务旗舰"
-    RESPOND "2. Yoga 系列 - 二合一翻转本"
-    RESPOND "3. Legion 系列 - 游戏本"
-    RESPOND "4. IdeaPad 系列 - 轻薄本"
-    RESPOND "您对哪个系列感兴趣？可以说 1、2、3、4"
-
-RULE product_query_direct_brand_dell
-WHEN INTENT_IS product_query
-     AND CONTEXT_EQ current_category = "电脑"
-     AND CONTEXT_NOT_SET current_subtype
-     AND CONTEXT_NOT_SET current_brand
-     AND CONTEXT_STAGE_IS "subtype_select"
-     AND USER_MENTION_ANY "戴尔|dell|xps"
-THEN
-    SET_VAR current_subtype = "笔记本"
-    ADD_TO_CHAIN type = "subtype" value = "笔记本"
-    SET_VAR current_brand = "戴尔"
-    ADD_TO_CHAIN type = "brand" value = "戴尔"
-    SET_STAGE "series_select"
-    RESPOND "🎯 根据您的选择（${product_chain}），为您推荐戴尔笔记本系列："
-    RESPOND "1. XPS 系列 - 高端轻薄"
-    RESPOND "2. Latitude 系列 - 商务办公"
-    RESPOND "3. Inspiron 系列 - 家用娱乐"
-    RESPOND "4. Alienware 系列 - 游戏本"
-    RESPOND "您对哪个系列感兴趣？可以说 1、2、3、4"
-
-RULE product_query_direct_brand_huawei
-WHEN INTENT_IS product_query
-     AND CONTEXT_EQ current_category = "电脑"
-     AND CONTEXT_NOT_SET current_subtype
-     AND CONTEXT_NOT_SET current_brand
-     AND CONTEXT_STAGE_IS "subtype_select"
-     AND USER_MENTION_ANY "华为|huawei"
-THEN
-    SET_VAR current_subtype = "笔记本"
-    ADD_TO_CHAIN type = "subtype" value = "笔记本"
-    SET_VAR current_brand = "华为"
-    ADD_TO_CHAIN type = "brand" value = "华为"
-    SET_STAGE "completed"
-    RESPOND "🎯 根据您的选择（${product_chain}），为您推荐华为 MateBook 系列。"
-    RESPOND "📝 由于华为笔记本目前库存紧张，建议您联系线下门店确认具体型号和库存情况。"
-    RESPOND "是否需要为您推荐其他品牌？"
+    SUGGEST_SERIES
 
 # 苹果笔记本 - 增强：支持多种表达和数字选择
 RULE product_query_set_brand_apple_laptop
 WHEN INTENT_IS product_query
      AND CONTEXT_EQ current_category = "电脑"
-    AND CONTEXT_EQ current_subtype = "笔记本"
-     AND USER_MENTION_ANY "苹果|apple|macbook|mac|1|第一个"
-    AND CONTEXT_NOT_SET current_brand
-    AND CONTEXT_NOT_SET current_series
+     AND CONTEXT_EQ current_subtype = "笔记本"
+     AND USER_MENTION_ANY "苹果|apple|macbook|mac|air|macbook air|MacBook Air|1|第一个"
+     AND CONTEXT_NOT_SET current_brand
+     AND CONTEXT_NOT_SET current_series
      AND CONTEXT_STAGE_IS "brand_select"
 THEN
     SET_VAR current_brand = "苹果"
     ADD_TO_CHAIN type = "brand" value = "苹果"
     SET_STAGE "series_select"
-    RESPOND "🎯 根据您的选择（${product_chain}），为您推荐 MacBook 系列："
-    RESPOND "1. MacBook Air - 轻薄便携"
-    RESPOND "2. MacBook Pro - 性能更强"
-    RESPOND "3. MacBook Pro with M3 - 最新款"
-    RESPOND "您对哪一款更感兴趣？可以说 1、2、3 或者具体名称"
+    SUGGEST_SERIES
 
-# 联想笔记本 - 增强：支持多种表达
-RULE product_query_set_brand_lenovo_laptop
+RULE product_query_direct_series_air_from_brand_select
 WHEN INTENT_IS product_query
-     AND CONTEXT_EQ current_category = "电脑"
-    AND CONTEXT_EQ current_subtype = "笔记本"
-     AND USER_MENTION_ANY "联想|lenovo|thinkpad|2|第二个"
-    AND CONTEXT_NOT_SET current_brand
+    AND CONTEXT_EQ current_category = "电脑"
+    AND CONTEXT_STAGE_IS "brand_select"
+    AND USER_MENTION_ANY "air|Air|macbook air|MacBook Air"
     AND CONTEXT_NOT_SET current_series
-     AND CONTEXT_STAGE_IS "brand_select"
 THEN
-    SET_VAR current_brand = "联想"
-    ADD_TO_CHAIN type = "brand" value = "联想"
-    SET_STAGE "series_select"
-    RESPOND "🎯 根据您的选择（${product_chain}），为您推荐联想笔记本系列："
-    RESPOND "1. ThinkPad X1 Carbon - 商务旗舰"
-    RESPOND "2. Yoga 系列 - 二合一翻转本"
-    RESPOND "3. Legion 系列 - 游戏本"
-    RESPOND "4. IdeaPad 系列 - 轻薄本"
-    RESPOND "您对哪个系列感兴趣？可以说 1、2、3、4"
+    SET_VAR current_brand = "苹果"
+    ADD_TO_CHAIN "brand" "苹果"
+    SET_VAR current_series = "MacBook Air"
+    ADD_TO_CHAIN "series" "MacBook Air"
+    SET_STAGE "config_select"
+    DESCRIBE_SERIES_CONFIG
 
-# 戴尔笔记本 - 增强：支持多种表达
-RULE product_query_set_brand_dell_laptop
+RULE product_query_direct_series_pro_from_brand_select
 WHEN INTENT_IS product_query
-     AND CONTEXT_EQ current_category = "电脑"
-    AND CONTEXT_EQ current_subtype = "笔记本"
-     AND USER_MENTION_ANY "戴尔|dell|xps|3|第三个"
-    AND CONTEXT_NOT_SET current_brand
+    AND CONTEXT_EQ current_category = "电脑"
+    AND CONTEXT_STAGE_IS "brand_select"
+    AND USER_MENTION_ANY "pro|Pro|macbook pro|MacBook Pro"
     AND CONTEXT_NOT_SET current_series
-     AND CONTEXT_STAGE_IS "brand_select"
 THEN
-    SET_VAR current_brand = "戴尔"
-    ADD_TO_CHAIN type = "brand" value = "戴尔"
-    SET_STAGE "series_select"
-    RESPOND "🎯 根据您的选择（${product_chain}），为您推荐戴尔笔记本系列："
-    RESPOND "1. XPS 系列 - 高端轻薄"
-    RESPOND "2. Latitude 系列 - 商务办公"
-    RESPOND "3. Inspiron 系列 - 家用娱乐"
-    RESPOND "4. Alienware 系列 - 游戏本"
-    RESPOND "您对哪个系列感兴趣？可以说 1、2、3、4"
+    SET_VAR current_brand = "苹果"
+    ADD_TO_CHAIN "brand" "苹果"
+    SET_VAR current_series = "MacBook Pro"
+    ADD_TO_CHAIN "series" "MacBook Pro"
+    SET_STAGE "config_select"
+    DESCRIBE_SERIES_CONFIG
 
-# 华为笔记本 - 闭合处理
-RULE product_query_set_brand_huawei_laptop
+
+# iMac 系列选择
+RULE product_query_set_series_imac
 WHEN INTENT_IS product_query
-     AND CONTEXT_EQ current_category = "电脑"
-    AND CONTEXT_EQ current_subtype = "笔记本"
-     AND USER_MENTION_ANY "华为|huawei|4|第四个"
-    AND CONTEXT_NOT_SET current_brand
-     AND CONTEXT_STAGE_IS "brand_select"
+    AND CONTEXT_EQ current_category = "电脑"
+    AND CONTEXT_EQ current_brand = "苹果"
+    AND CONTEXT_EQ current_subtype = "台式机"
+    AND USER_MENTION_ANY "imac|iMac|3|第三个"
+    AND CONTEXT_NOT_SET current_series
+    AND CONTEXT_STAGE_IS "series_select"
 THEN
-    SET_VAR current_brand = "华为"
-    ADD_TO_CHAIN type = "brand" value = "华为"
-    SET_STAGE "completed"
-    RESPOND "🎯 根据您的选择（${product_chain}），为您推荐华为 MateBook 系列。"
-    RESPOND "📝 由于华为笔记本目前库存紧张，建议您联系线下门店确认具体型号和库存情况。"
-    RESPOND "是否需要为您推荐其他品牌？"
+    SET_VAR current_series = "iMac"
+    ADD_TO_CHAIN type = "series" value = "iMac"
+    SET_STAGE "config_select"
+    DESCRIBE_SERIES_CONFIG
+
+
+# iPad 系列选择 - 基于“平板”品类
+RULE product_query_set_series_ipad_pro
+WHEN INTENT_IS product_query
+    AND CONTEXT_EQ current_category = "平板"
+    AND CONTEXT_EQ current_brand = "苹果"
+    AND USER_MENTION_ANY "ipad pro|iPad Pro|pro|1|第一个"
+    AND CONTEXT_NOT_SET current_series
+    AND CONTEXT_STAGE_IS "series_select"
+THEN
+    SET_VAR current_series = "iPad Pro"
+    ADD_TO_CHAIN type = "series" value = "iPad Pro"
+    SET_STAGE "config_select"
+    DESCRIBE_SERIES_CONFIG
+
+RULE product_query_set_series_ipad_air
+WHEN INTENT_IS product_query
+    AND CONTEXT_EQ current_category = "平板"
+    AND CONTEXT_EQ current_brand = "苹果"
+    AND USER_MENTION_ANY "ipad air|iPad Air|air|2|第二个"
+    AND CONTEXT_NOT_SET current_series
+    AND CONTEXT_STAGE_IS "series_select"
+THEN
+    SET_VAR current_series = "iPad Air"
+    ADD_TO_CHAIN type = "series" value = "iPad Air"
+    SET_STAGE "config_select"
+    DESCRIBE_SERIES_CONFIG
+
+RULE product_query_set_series_ipad
+WHEN INTENT_IS product_query
+    AND CONTEXT_EQ current_category = "平板"
+    AND CONTEXT_EQ current_brand = "苹果"
+    AND USER_MENTION_ANY "ipad|iPad|3|第三个"
+    AND CONTEXT_NOT_SET current_series
+    AND CONTEXT_STAGE_IS "series_select"
+THEN
+    SET_VAR current_series = "iPad"
+    ADD_TO_CHAIN type = "series" value = "iPad"
+    SET_STAGE "config_select"
+    DESCRIBE_SERIES_CONFIG
+
+RULE product_query_set_series_ipad_mini
+WHEN INTENT_IS product_query
+    AND CONTEXT_EQ current_category = "平板"
+    AND CONTEXT_EQ current_brand = "苹果"
+    AND USER_MENTION_ANY "ipad mini|iPad mini|mini|4|第四个"
+    AND CONTEXT_NOT_SET current_series
+    AND CONTEXT_STAGE_IS "series_select"
+THEN
+    SET_VAR current_series = "iPad mini"
+    ADD_TO_CHAIN type = "series" value = "iPad mini"
+    SET_STAGE "config_select"
+    DESCRIBE_SERIES_CONFIG
+
+# Mac mini 系列选择
+RULE product_query_set_series_mac_mini
+WHEN INTENT_IS product_query
+    AND CONTEXT_EQ current_category = "电脑"
+    AND CONTEXT_EQ current_brand = "苹果"
+    AND CONTEXT_EQ current_subtype = "台式机"
+    AND USER_MENTION_ANY "mac mini|mini|4|第四个"
+    AND CONTEXT_NOT_SET current_series
+    AND CONTEXT_STAGE_IS "series_select"
+THEN
+    SET_VAR current_series = "Mac mini"
+    ADD_TO_CHAIN type = "series" value = "Mac mini"
+    SET_STAGE "config_select"
+    DESCRIBE_SERIES_CONFIG
+
+# Mac Studio 系列选择
+RULE product_query_set_series_mac_studio
+WHEN INTENT_IS product_query
+    AND CONTEXT_EQ current_category = "电脑"
+    AND CONTEXT_EQ current_brand = "苹果"
+    AND CONTEXT_EQ current_subtype = "台式机"
+    AND USER_MENTION_ANY "mac studio|studio|5|第五个"
+    AND CONTEXT_NOT_SET current_series
+    AND CONTEXT_STAGE_IS "series_select"
+THEN
+    SET_VAR current_series = "Mac Studio"
+    ADD_TO_CHAIN type = "series" value = "Mac Studio"
+    SET_STAGE "config_select"
+    DESCRIBE_SERIES_CONFIG
+
 
 ########################################
 # 第四步：苹果笔记本系列选择
@@ -298,6 +343,7 @@ THEN
 # MacBook Air - 增强：支持数字选择和多种名称
 RULE product_query_set_series_air
 WHEN INTENT_IS product_query
+     AND CONTEXT_EQ current_category = "电脑"
      AND CONTEXT_EQ current_brand = "苹果"
      AND USER_MENTION_ANY "air|Air|1|第一个|选项一|macbook air"
      AND CONTEXT_NOT_SET current_series
@@ -306,15 +352,12 @@ THEN
     SET_VAR current_series = "MacBook Air"
     ADD_TO_CHAIN type = "series" value = "MacBook Air"
     SET_STAGE "config_select"
-    RESPOND "💻 MacBook Air 主要配置："
-    RESPOND "1. M2芯片 13.6寸：8,999元起"
-    RESPOND "2. M3芯片 13.6寸：9,999元起"
-    RESPOND "3. M3芯片 15.3寸：11,999元起"
-    RESPOND "您对哪个尺寸感兴趣？可以说 1、2、3"
+    DESCRIBE_SERIES_CONFIG
 
 # MacBook Pro - 增强：支持数字选择和多种名称
 RULE product_query_set_series_pro
 WHEN INTENT_IS product_query
+     AND CONTEXT_EQ current_category = "电脑"
      AND CONTEXT_EQ current_brand = "苹果"
      AND USER_MENTION_ANY "pro|Pro|2|第二个|选项二|macbook pro"
      AND CONTEXT_NOT_SET current_series
@@ -323,16 +366,13 @@ THEN
     SET_VAR current_series = "MacBook Pro"
     ADD_TO_CHAIN type = "series" value = "MacBook Pro"
     SET_STAGE "config_select"
-    RESPOND "💻 MacBook Pro 主要配置："
-    RESPOND "1. 14寸 M3芯片：12,999元起"
-    RESPOND "2. 14寸 M3 Pro芯片：16,999元起"
-    RESPOND "3. 16寸 M3 Pro芯片：22,999元起"
-    RESPOND "4. 16寸 M3 Max芯片：29,999元起"
-    RESPOND "您对哪个配置感兴趣？可以说 1、2、3、4"
+    DESCRIBE_SERIES_CONFIG
 
 # MacBook Pro with M3 (明确指定M3) - 增强：支持数字选择
 RULE product_query_set_series_mbp_m3
 WHEN INTENT_IS product_query
+     AND CONTEXT_EQ current_category = "电脑"
+     AND CONTEXT_EQ current_subtype = "笔记本"
      AND CONTEXT_EQ current_brand = "苹果"
      AND USER_MENTION_ANY "M3|m3|3|第三个|选项三"
      AND CONTEXT_NOT_SET current_series
@@ -341,10 +381,7 @@ THEN
     SET_VAR current_series = "MacBook Pro M3"
     ADD_TO_CHAIN type = "series" value = "MacBook Pro with M3"
     SET_STAGE "size_select"
-    RESPOND "好的！【MacBook Pro with M3 芯片】目前有："
-    RESPOND "1. 14 寸：12,999 元"
-    RESPOND "2. 16 寸：16,999 元"
-    RESPOND "您更关注【14 寸】还是【16 寸】？可以说 1 或 2"
+    RESPOND_KB "mbp_m3_size_options"
 
 ########################################
 # 第五步：MacBook Air 尺寸选择
@@ -358,25 +395,17 @@ WHEN INTENT_IS product_query
      AND CONTEXT_STAGE_IS "config_select"
 THEN
     SET_STAGE "storage_select"
-    RESPOND "📦 13.6寸 MacBook Air 可选配置："
-    RESPOND "1. 8GB + 256GB SSD：8,999元"
-    RESPOND "2. 8GB + 512GB SSD：10,999元"
-    RESPOND "3. 16GB + 512GB SSD：12,999元"
-    RESPOND "您需要哪种存储配置？可以说 1、2、3"
+    RESPOND_KB "air_13_storage_options"
 
 # Air 15寸 - 增强：支持数字选择和多种表达
 RULE product_query_set_air_15
 WHEN INTENT_IS product_query
      AND CONTEXT_EQ current_series = "MacBook Air"
-     AND USER_MENTION_ANY "15|15.3|2|3|第二个|第三个|15寸"
+     AND USER_MENTION_ANY "15|15.3|2|第二个|15寸"
      AND CONTEXT_STAGE_IS "config_select"
 THEN
     SET_STAGE "storage_select"
-    RESPOND "📦 15.3寸 MacBook Air 可选配置："
-    RESPOND "1. 8GB + 256GB SSD：11,999元"
-    RESPOND "2. 8GB + 512GB SSD：13,999元"
-    RESPOND "3. 16GB + 1TB SSD：15,999元"
-    RESPOND "您需要哪种存储配置？可以说 1、2、3"
+    RESPOND_KB "air_15_storage_options"
 
 ########################################
 # 第六步：MacBook Pro 尺寸选择
@@ -390,11 +419,7 @@ WHEN INTENT_IS product_query
      AND CONTEXT_STAGE_IS "config_select"
 THEN
     SET_STAGE "chip_select"
-    RESPOND "🔧 14寸 MacBook Pro 芯片选项："
-    RESPOND "1. M3芯片：12,999元"
-    RESPOND "2. M3 Pro芯片：16,999元"
-    RESPOND "3. M3 Max芯片：24,999元"
-    RESPOND "您需要哪种芯片配置？可以说 1、2、3"
+    RESPOND_KB "mbp_14_chip_options"
 
 # Pro 16寸 - 修改：只设置stage，不显示选项
 RULE product_query_set_pro_16
@@ -404,10 +429,7 @@ WHEN INTENT_IS product_query
      AND CONTEXT_STAGE_IS "config_select"
 THEN
     SET_STAGE "chip_select"
-    RESPOND "🔧 16寸 MacBook Pro 芯片选项："
-    RESPOND "1. M3 Pro芯片：22,999元"
-    RESPOND "2. M3 Max芯片：29,999元"
-    RESPOND "您需要哪种芯片配置？可以说 1 或 2"
+    RESPOND_KB "mbp_16_chip_options"
 
 ########################################
 # 芯片配置选择（在尺寸选择之后）
@@ -420,12 +442,7 @@ WHEN INTENT_IS product_query
      AND USER_MENTION_ANY "1|第一个|m3|M3芯片"
 THEN
     SET_STAGE "storage_select"
-    RESPOND "✅ 已选择 M3 芯片"
-    RESPOND "📦 存储配置选项："
-    RESPOND "1. 512GB SSD"
-    RESPOND "2. 1TB SSD"
-    RESPOND "3. 2TB SSD"
-    RESPOND "您需要哪种存储容量？"
+    RESPOND_KB "mbp_storage_options_m3"
 
 # M3 Pro芯片选择
 RULE product_query_set_chip_m3_pro
@@ -434,12 +451,7 @@ WHEN INTENT_IS product_query
      AND USER_MENTION_ANY "2|第二个|m3 pro|M3 Pro芯片"
 THEN
     SET_STAGE "storage_select"
-    RESPOND "✅ 已选择 M3 Pro 芯片"
-    RESPOND "📦 存储配置选项："
-    RESPOND "1. 1TB SSD"
-    RESPOND "2. 2TB SSD"
-    RESPOND "3. 4TB SSD"
-    RESPOND "您需要哪种存储容量？"
+    RESPOND_KB "mbp_storage_options_m3_pro"
 
 # M3 Max芯片选择
 RULE product_query_set_chip_m3_max
@@ -448,12 +460,7 @@ WHEN INTENT_IS product_query
      AND USER_MENTION_ANY "3|第三个|m3 max|M3 Max芯片"
 THEN
     SET_STAGE "storage_select"
-    RESPOND "✅ 已选择 M3 Max 芯片"
-    RESPOND "📦 存储配置选项："
-    RESPOND "1. 2TB SSD"
-    RESPOND "2. 4TB SSD"
-    RESPOND "3. 8TB SSD"
-    RESPOND "您需要哪种存储容量？"
+    RESPOND_KB "mbp_storage_options_m3_max"
 
 ########################################
 # 第七步：存储配置选择
@@ -560,11 +567,7 @@ THEN
     SET_VAR current_brand = "苹果"
     ADD_TO_CHAIN type = "brand" value = "苹果"
     SET_STAGE "phone_model_select"
-    RESPOND "📱 您想了解苹果 iPhone，当前主推型号有："
-    RESPOND "1. iPhone 16 Pro / Pro Max - 旗舰性能"
-    RESPOND "2. iPhone 16 / 16 Plus - 全面均衡"
-    RESPOND "3. iPhone 15 / 15 Plus - 高性价比"
-    RESPOND "您更感兴趣哪一款？可以说 1、2、3 或具体型号"
+    SUGGEST_SERIES
 
 RULE product_query_set_phone_model_16pro
 WHEN INTENT_IS product_query
@@ -576,11 +579,7 @@ THEN
     SET_VAR current_series = "iPhone 16 Pro 系列"
     ADD_TO_CHAIN type = "series" value = "iPhone 16 Pro 系列"
     SET_STAGE "phone_storage_select"
-    RESPOND "🔋 iPhone 16 Pro 系列存储选项："
-    RESPOND "1. 256GB"
-    RESPOND "2. 512GB"
-    RESPOND "3. 1TB"
-    RESPOND "您需要多大容量？可以说 1、2、3"
+    DESCRIBE_SERIES_CONFIG
 
 RULE product_query_set_phone_model_16
 WHEN INTENT_IS product_query
@@ -592,11 +591,7 @@ THEN
     SET_VAR current_series = "iPhone 16 系列"
     ADD_TO_CHAIN type = "series" value = "iPhone 16 系列"
     SET_STAGE "phone_storage_select"
-    RESPOND "🔋 iPhone 16 系列存储选项："
-    RESPOND "1. 128GB"
-    RESPOND "2. 256GB"
-    RESPOND "3. 512GB"
-    RESPOND "您需要多大容量？可以说 1、2、3"
+    DESCRIBE_SERIES_CONFIG
 
 RULE product_query_set_phone_model_15
 WHEN INTENT_IS product_query
@@ -608,11 +603,7 @@ THEN
     SET_VAR current_series = "iPhone 15 系列"
     ADD_TO_CHAIN type = "series" value = "iPhone 15 系列"
     SET_STAGE "phone_storage_select"
-    RESPOND "🔋 iPhone 15 系列存储选项："
-    RESPOND "1. 128GB"
-    RESPOND "2. 256GB"
-    RESPOND "3. 512GB"
-    RESPOND "您需要多大容量？可以说 1、2、3"
+    DESCRIBE_SERIES_CONFIG
 
 RULE product_query_set_phone_storage_128
 WHEN INTENT_IS product_query
@@ -620,12 +611,7 @@ WHEN INTENT_IS product_query
     AND USER_MENTION_ANY "128|128gb|1|第一个"
 THEN
     SET_STAGE "phone_color_select"
-    RESPOND "🎨 颜色可选："
-    RESPOND "1. 黑色"
-    RESPOND "2. 白色"
-    RESPOND "3. 蓝色"
-    RESPOND "4. 自然钛"
-    RESPOND "您偏好哪种颜色？可以说 1、2、3、4"
+    RESPOND_KB "iphone_color_options"
 
 RULE product_query_set_phone_storage_256
 WHEN INTENT_IS product_query
@@ -633,12 +619,7 @@ WHEN INTENT_IS product_query
     AND USER_MENTION_ANY "256|256gb|2|第二个"
 THEN
     SET_STAGE "phone_color_select"
-    RESPOND "🎨 颜色可选："
-    RESPOND "1. 黑色"
-    RESPOND "2. 白色"
-    RESPOND "3. 蓝色"
-    RESPOND "4. 自然钛"
-    RESPOND "您偏好哪种颜色？可以说 1、2、3、4"
+    RESPOND_KB "iphone_color_options"
 
 RULE product_query_set_phone_storage_512
 WHEN INTENT_IS product_query
@@ -646,12 +627,7 @@ WHEN INTENT_IS product_query
     AND USER_MENTION_ANY "512|512gb|3|第三个"
 THEN
     SET_STAGE "phone_color_select"
-    RESPOND "🎨 颜色可选："
-    RESPOND "1. 黑色"
-    RESPOND "2. 白色"
-    RESPOND "3. 蓝色"
-    RESPOND "4. 自然钛"
-    RESPOND "您偏好哪种颜色？可以说 1、2、3、4"
+    RESPOND_KB "iphone_color_options"
 
 RULE product_query_set_phone_storage_1tb
 WHEN INTENT_IS product_query
@@ -659,12 +635,7 @@ WHEN INTENT_IS product_query
     AND USER_MENTION_ANY "1tb|1024|更大容量"
 THEN
     SET_STAGE "phone_color_select"
-    RESPOND "🎨 颜色可选："
-    RESPOND "1. 黑色"
-    RESPOND "2. 白色"
-    RESPOND "3. 蓝色"
-    RESPOND "4. 自然钛"
-    RESPOND "您偏好哪种颜色？可以说 1、2、3、4"
+    RESPOND_KB "iphone_color_options"
 
 RULE product_query_set_phone_color_black
 WHEN INTENT_IS product_query
@@ -706,54 +677,18 @@ THEN
     RESPOND "💰 价格会根据容量和渠道波动，稍后可为您计算预估价。"
     RESPOND "是否需要加入购物车，还是继续了解其他产品？"
 
-# 联想笔记本系列闭合处理
-RULE product_query_lenovo_series_complete
-WHEN INTENT_IS product_query
-     AND CONTEXT_EQ current_brand = "联想"
-     AND USER_MENTION_ANY "1|2|3|4|thinkpad|yoga|legion|ideapad"
-     AND CONTEXT_STAGE_IS "series_select"
-THEN
-    SET_STAGE "completed"
-    RESPOND "🎯 根据您的选择（${product_chain}），已为您记录需求。"
-    RESPOND "📞 联想笔记本具体型号和价格需要根据最新库存确认。"
-    RESPOND "建议您联系客服专员获取详细报价和库存信息。"
 
-# 戴尔笔记本系列闭合处理
-RULE product_query_dell_series_complete
-WHEN INTENT_IS product_query
-     AND CONTEXT_EQ current_brand = "戴尔"
-     AND USER_MENTION_ANY "1|2|3|4|xps|latitude|inspiron|alienware"
-     AND CONTEXT_STAGE_IS "series_select"
-THEN
-    SET_STAGE "completed"
-    RESPOND "🎯 根据您的选择（${product_chain}），已为您记录需求。"
-    RESPOND "💻 戴尔笔记本配置丰富，价格区间较大。"
-    RESPOND "建议您提供具体预算范围，以便为您推荐最合适的型号。"
-
-# 台式机品牌闭合处理
-RULE product_query_desktop_brand_complete
-WHEN INTENT_IS product_query
-    AND CONTEXT_EQ current_subtype = "台式机"
-     AND USER_MENTION_ANY "联想|戴尔|惠普|华硕|1|2|3|4"
-     AND CONTEXT_STAGE_IS "brand_select"
-THEN
-    SET_VAR current_brand = "台式机品牌"
-    SET_STAGE "completed"
-    RESPOND "🎯 根据您的选择（${product_chain}），已了解您的需求。"
-    RESPOND "🖥️ 台式机配置灵活，支持深度定制。"
-    RESPOND "建议您联系我们的技术顾问，根据您的具体需求提供专业配置方案。"
-
-# 手机品牌闭合处理
+# 手机品牌闭合处理（仅针对苹果品牌）
 RULE product_query_phone_brand_complete
 WHEN INTENT_IS product_query
      AND CONTEXT_EQ current_category = "手机"
-     AND USER_MENTION_ANY "苹果|华为|小米|三星|oppo|vivo|1|2|3|4"
+     AND USER_MENTION_ANY "苹果|apple|iphone|1|2|3|4"
      AND CONTEXT_STAGE_IS "brand_select"
 THEN
     SET_STAGE "completed"
-    RESPOND "📱 根据您的选择（${product_chain}），已了解您的手机品牌偏好。"
-    RESPOND "目前手机型号更新频繁，价格波动较大。"
-    RESPOND "建议您提供具体型号或预算范围，以便为您查询最新价格和优惠活动。"
+    RESPOND "📱 根据您的选择（${product_chain}），已了解您的苹果手机品牌偏好。"
+    RESPOND "目前 iPhone 型号更新较快，价格也会随配置和活动有所浮动。"
+    RESPOND "建议您提供具体型号或预算范围，以便为您查询更贴近的价格区间。"
 
 ########################################
 # 购物车操作
@@ -800,14 +735,33 @@ THEN
     RESPOND "总价：根据配置定价"
     RESPOND "请提供收货地址和联系方式完成订单"
 
+# 订单确认规则
+RULE confirm_order
+WHEN INTENT_IS confirmation
+    AND CONTEXT_STAGE_IS "checkout"
+THEN
+    RESPOND "✅ 订单已确认！我们将尽快为您安排发货。"
+    RESPOND "📦 您可以在APP中随时查看订单状态和物流信息。"
+    RESPOND "👋 感谢您的购买，期待您的使用体验！"
+    SET_STAGE "order_completed"
+
+RULE confirm_order_text
+WHEN INTENT_IS cart_operation
+    AND CONTEXT_STAGE_IS "checkout"
+    AND USER_MENTION_ANY "完成订单|确认订单|确认下单|提交订单|下单|确认"
+THEN
+    RESPOND "✅ 订单已确认！我们将尽快为您安排发货。"
+    RESPOND "📦 您可以在APP中随时查看订单状态和物流信息。"
+    RESPOND "👋 感谢您的购买，期待您的使用体验！"
+    SET_STAGE "order_completed"
+
 # 全局重置（cart_operation 意图场景下）
 RULE cart_global_reset_rule
 WHEN INTENT_IS cart_operation
     AND USER_MENTION_ANY "重置|重新开始"
 THEN
     RESET_SHOPPING_CONTEXT
-    RESPOND "🔄 好的，让我们重新开始！"
-    RESPOND "您想了解什么产品？可以说：电脑、手机等"
+    RESPOND_KB "restart_prompt_short"
 
 
 # 继续购物 - 使用完整重置
@@ -816,8 +770,7 @@ WHEN INTENT_IS cart_operation
     AND USER_MENTION_ANY "继续购物|继续浏览|再看看|继续看|浏览其他|继续|1|第一个"
 THEN
     RESET_SHOPPING_CONTEXT
-    RESPOND "🔄 好的，让我们重新开始！"
-    RESPOND "您想了解什么产品？可以说：电脑、手机等"
+    RESPOND_KB "restart_prompt_short"
 
 # 清空购物车 - 使用完整重置
 RULE clear_cart_rule
@@ -825,9 +778,7 @@ WHEN INTENT_IS cart_operation
     AND USER_MENTION_ANY "清空购物车|清空|删除|移除|3|第三个"
 THEN
     RESET_SHOPPING_CONTEXT
-    RESPOND "🗑️ 已清空购物车"
-    RESPOND "让我们重新开始选择产品吧！"
-    RESPOND "您想了解什么产品？可以说：电脑、手机等"
+    RESPOND_KB "cart_cleared_prompt"
 ########################################
 # 确认性回答处理
 ########################################
@@ -843,7 +794,7 @@ THEN
     RESPOND "📋 当前购物车内容："
     RESPOND "   - ${product_chain}"
     RESPOND "💰 估算总价：根据配置定价"
-    RESPOND "下一步您可以："
+    RESPOND "👋 感谢您的选择！下一步您可以："
     RESPOND "1. 继续浏览其他产品"
     RESPOND "2. 查看购物车"
     RESPOND "3. 立即结算"
@@ -856,7 +807,7 @@ WHEN INTENT_IS confirmation
 THEN
     SET_STAGE "welcome"
     RESPOND "🔄 好的，让我们重新开始！"
-    RESPOND "您想了解什么产品？可以说：电脑、手机等"
+    RESPOND "您想了解什么苹果产品？可以说：Mac、iPhone、iPad 等"
 
 # 否定回答
 RULE negative_response
@@ -865,7 +816,7 @@ WHEN INTENT_IS confirmation
 THEN
     SET_STAGE "welcome"
     RESPOND "👌 好的，了解。"
-    RESPOND "您想了解什么其他产品？可以说：电脑、手机等"
+    RESPOND "您想了解什么其他苹果产品？可以说：Mac、iPhone、iPad 等"
 ########################################
 # 上下文兜底提示（fallback 规则）
 ########################################
@@ -875,14 +826,14 @@ RULE fallback_category_select
 WHEN INTENT_IS fallback
     AND CONTEXT_STAGE_IS "category_select"
 THEN
-    RESPOND "请告诉我您想了解【电脑】还是【手机】？"
+    RESPOND_KB "fallback_category_select_prompt"
 
 # 子类选择阶段：请用户在笔记本/台式机之间选择
 RULE fallback_subtype_select
 WHEN INTENT_IS fallback
     AND CONTEXT_STAGE_IS "subtype_select"
 THEN
-    RESPOND "您更偏向【笔记本】还是【台式机】？"
+    RESPOND_KB "fallback_subtype_select_prompt"
 
 # 品牌选择阶段：优先使用子类，其次使用大类，最后使用通用“产品”
 RULE fallback_brand_select_with_subtype
@@ -890,7 +841,8 @@ WHEN INTENT_IS fallback
     AND CONTEXT_STAGE_IS "brand_select"
     AND CONTEXT_HAS "current_subtype"
 THEN
-    RESPOND "请选择${current_subtype}的品牌"
+    RESPOND_KB "fallback_brand_select_with_subtype_prompt"
+    SUGGEST_BRANDS
 
 RULE fallback_brand_select_with_category
 WHEN INTENT_IS fallback
@@ -898,7 +850,8 @@ WHEN INTENT_IS fallback
     AND CONTEXT_NOT_SET current_subtype
     AND CONTEXT_HAS "current_category"
 THEN
-    RESPOND "请选择${current_category}的品牌"
+    RESPOND_KB "fallback_brand_select_with_category_prompt"
+    SUGGEST_BRANDS
 
 RULE fallback_brand_select_generic
 WHEN INTENT_IS fallback
@@ -906,48 +859,70 @@ WHEN INTENT_IS fallback
     AND CONTEXT_NOT_SET current_subtype
     AND CONTEXT_NOT_SET current_category
 THEN
-    RESPOND "请选择产品的品牌"
+    RESPOND_KB "fallback_brand_select_generic_prompt"
+    SUGGEST_BRANDS
 
 # 系列选择阶段
 RULE fallback_series_select
 WHEN INTENT_IS fallback
     AND CONTEXT_STAGE_IS "series_select"
 THEN
-    RESPOND "请选择${current_brand}的具体系列"
+    RESPOND_KB "fallback_series_select_prompt"
+    SUGGEST_SERIES
+
+# 通用配置选择规则 - 处理有效的数字输入
+RULE product_query_valid_config_choice
+WHEN INTENT_IS product_query
+    AND CONTEXT_STAGE_IS "config_select"
+    AND USER_MENTION_ANY "1|2"
+THEN
+    SET_STAGE "completed"
+    RESPOND "✅ 配置选择完成！"
+    RESPOND "🎉 感谢您的选择，如需了解更多详情或选购其他产品，请告诉我。"
 
 # 配置选择阶段
 RULE fallback_config_select
 WHEN INTENT_IS fallback
     AND CONTEXT_STAGE_IS "config_select"
 THEN
-    RESPOND "请选择具体的配置选项"
+    RESPOND_KB "fallback_config_select_prompt"
+    DESCRIBE_SERIES_CONFIG
 
 # 苹果手机型号选择阶段
 RULE fallback_phone_model_select
 WHEN INTENT_IS fallback
     AND CONTEXT_STAGE_IS "phone_model_select"
 THEN
-    RESPOND "请选择您感兴趣的 iPhone 型号，可以说 1、2、3。"
+    RESPOND_KB "fallback_phone_model_select_prompt"
 
 # 苹果手机容量选择阶段
 RULE fallback_phone_storage_select
 WHEN INTENT_IS fallback
     AND CONTEXT_STAGE_IS "phone_storage_select"
 THEN
-    RESPOND "请选择需要的存储容量，例如 256GB。"
+    RESPOND_KB "fallback_phone_storage_select_prompt"
 
 # 苹果手机颜色选择阶段
 RULE fallback_phone_color_select
 WHEN INTENT_IS fallback
     AND CONTEXT_STAGE_IS "phone_color_select"
 THEN
-    RESPOND "请选择喜欢的机身颜色，例如黑色、白色。"
+    RESPOND_KB "fallback_phone_color_select_prompt"
+
+# 订单完成阶段
+RULE fallback_order_completed
+WHEN INTENT_IS fallback
+    AND CONTEXT_STAGE_IS "order_completed"
+THEN
+    RESPOND "👋 您的订单已提交完成！"
+    RESPOND "📱 可以在APP中查看订单详情和物流状态。"
+    RESPOND "🛒 如需购买其他产品，请说'重新开始'或直接告诉我产品名称。"
 
 # 默认兜底提示
 RULE fallback_default
 WHEN INTENT_IS fallback
 THEN
-    RESPOND "抱歉，我没有理解。您可以重新描述需求，或说'重新开始'来重置对话。"
+    RESPOND_KB "fallback_default_prompt"
 
 
 

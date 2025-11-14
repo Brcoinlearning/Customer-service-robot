@@ -9,6 +9,8 @@ from interpreter.interpreter import DSLInterpreter
 from llm.spark_client import SparkLLMClient
 from config.settings import Config
 from core.enhanced_context import EnhancedConversationContext
+from knowledge.product_knowledge import ProductKnowledge
+from knowledge.dining_knowledge import DiningKnowledgeProvider
 
 def load_dsl_script(file_path: str) -> str:
     """加载DSL脚本文件"""
@@ -33,9 +35,18 @@ def main():
     print("DSL客服机器人启动中...")
     print("=" * 50)
     
-    # 1. 加载和解析DSL脚本 - 使用配置类
-    print("步骤1: 正在加载DSL脚本...")
-    dsl_content = load_dsl_script(Config.DSL_SCRIPT_PATH)  # 使用配置的路径
+    print("步骤1: 选择并加载DSL脚本...")
+    print("可选脚本:")
+    print("  1) 电商顾问 (ecommerce.dsl)")
+    print("  2) 餐饮预订 (dining.dsl)")
+    choice = input("请输入序号选择脚本，回车使用默认[1]: ").strip()
+    if choice == "2":
+        selected_script_path = "src/scripts/dining.dsl"
+        selected_provider = "dining"
+    else:
+        selected_script_path = Config.DSL_SCRIPT_PATH
+        selected_provider = "product"
+    dsl_content = load_dsl_script(selected_script_path)
     if not dsl_content:
         print("❌ DSL脚本加载失败，程序退出")
         return
@@ -58,17 +69,21 @@ def main():
         traceback.print_exc()
         return
     
-    # 3. 初始化解释器和上下文管理器
+    # 3. 初始化解释器、上下文管理器和知识库
     print("步骤3: 正在初始化解释器...")
     try:
         interpreter = DSLInterpreter(parsed_dsl)
         context_manager = EnhancedConversationContext()
-        context_manager.update_context("user_id", "current_user")  # 设置用户ID
-        print("✅ 解释器初始化成功")
+        context_manager.update_context("user_id", "current_user")
+        if selected_provider == "dining":
+            knowledge = DiningKnowledgeProvider()
+        else:
+            knowledge = ProductKnowledge()
+        print("✅ 解释器和知识库初始化成功")
     except Exception as e:
-        print(f"❌ 解释器初始化失败: {e}")
+        print(f"❌ 解释器或知识库初始化失败: {e}")
         return
-    
+
     # 4. 初始化LLM客户端 - 使用配置类
     print("步骤4: 正在初始化LLM客户端...")
     try:
@@ -97,23 +112,25 @@ def main():
             if not user_input:
                 continue
             
-            # 使用LLM识别意图
+            # 使用LLM识别意图（携带当前上下文摘要）
             print("🤖 正在分析意图...", end="")
-            detected_intent = llm_client.detect_intent(user_input, parsed_dsl['intents'])
+            context_for_llm = context_manager.get_context()
+            detected_intent = llm_client.detect_intent(user_input, parsed_dsl['intents'], context_for_llm)
             print(f" [{detected_intent}]")
-            
+
             # 更新上下文
             context_manager.update_context("current_intent", detected_intent)
             context_manager.add_message("user", user_input)
 
-            # 构造传给解释器的上下文：包含原始上下文、管理器引用和本轮输入
+            # 构造传给解释器的上下文：包含原始上下文、知识库引用、管理器引用和本轮输入
             ctx = context_manager.get_context()
             ctx["_manager"] = context_manager
             ctx["user_input"] = user_input
-            
+            ctx["knowledge"] = knowledge
+
             # 执行DSL规则 - 传递上下文
             responses = interpreter.execute(detected_intent, ctx)
-            
+
             # 输出响应并更新上下文
             print("🤖 客服:", end="")
             for i, response in enumerate(responses):

@@ -4,6 +4,9 @@ import os
 # 添加项目根目录到 Python 路径
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
+# 同时将 src 目录加入路径，便于通过 core/parser 等顶层包名导入
+sys.path.insert(0, os.path.join(project_root, 'src'))
+
 
 from src.core.enhanced_context import EnhancedConversationContext
 from src.knowledge.product_knowledge import ProductKnowledge
@@ -66,7 +69,7 @@ def test_product_knowledge():
     # 测试系列获取
     series = knowledge.get_series_in_brand("手机", "苹果")
     print(f"📦 苹果手机系列: {series}")
-    assert "iPhone 15" in series, "苹果手机应该包含iPhone 15"
+    assert any("iPhone 15" in s for s in series), "苹果手机应该包含iPhone 15"
 
     # 测试搜索功能
     results = knowledge.search_products("iPhone")
@@ -152,13 +155,13 @@ def test_scenario_simulation():
     context = EnhancedConversationContext()
     knowledge = ProductKnowledge()
 
-    # 场景1: 完整的手机购买咨询
+    # 场景1: 完整的手机购买咨询（在苹果产品线内更换型号）
     scenarios = [
         {"user": "你好", "action": "greeting"},
         {"user": "我想买手机", "action": "set_category", "value": "手机"},
         {"user": "苹果的", "action": "set_brand", "value": "苹果"},
         {"user": "iPhone 15怎么样", "action": "set_series", "value": "iPhone 15"},
-        {"user": "换个华为看看", "action": "change_brand", "value": "华为"},
+        {"user": "换个16 Pro看看", "action": "change_brand", "value": "iPhone 16 Pro 系列"},
     ]
 
     for i, scenario in enumerate(scenarios, 1):
@@ -184,7 +187,7 @@ def test_scenario_simulation():
             print(f"🤖 系统: 已选择{scenario['value']}，正在加载详细信息...")
 
         elif scenario["action"] == "change_brand":
-            # 回退到品牌选择
+            # 回退到品牌选择（这里用来模拟用户更换为另一款 iPhone 型号）
             context.rollback_chain(1)  # 回退系列选择
             context.add_to_chain("brand", scenario["value"])
             series = knowledge.get_series_in_brand(context.get_context()["current_category"], scenario["value"])
@@ -196,8 +199,8 @@ def test_scenario_simulation():
     print(f"\n📋 最终选择链: {' → '.join(chain_values)}")
 
     assert "手机" in chain_values
-    assert "华为" in chain_values  # 最后选择的品牌
-    assert "iPhone 15" not in chain_values  # 应该被回退掉了
+    assert any("iPhone 16 Pro" in v for v in chain_values)  # 最后选择的型号
+    assert not any("iPhone 15" in v for v in chain_values)  # 旧型号应被回退掉
 
     print("🎉 完整场景模拟测试通过！")
 
@@ -222,6 +225,7 @@ def test_first_vs_repeat_product_query_prompts():
     }
     responses_first = interpreter.execute("product_query", context_first)
     assert any("首次" in r for r in responses_first)
+    # 提示文案中应同时提到电脑和手机，且可以额外提到 iPad 等苹果产品
     assert any("电脑" in r and "手机" in r for r in responses_first)
 
     # 场景二：重复产品咨询（query_count > 0）
@@ -291,6 +295,169 @@ def test_fallback_brand_select_from_dsl():
     # 应该触发 fallback_brand_select_* 规则，而不是 Python 内置字典
     # 这里期望出现“手机”的品牌提示文案
     assert any("手机" in r and "品牌" in r for r in responses)
+
+
+
+def test_suggest_brands_uses_product_knowledge():
+    """SUGGEST_BRANDS 应基于 ProductKnowledge 动态给出品牌列表"""
+    dsl_path = os.path.join(project_root, 'src', 'scripts', 'ecommerce.dsl')
+    with open(dsl_path, 'r', encoding='utf-8') as f:
+        dsl_content = f.read()
+
+    parser = DSLParser()
+    parsed_dsl = parser.parse(dsl_content)
+    interpreter = DSLInterpreter(parsed_dsl)
+    knowledge = ProductKnowledge()
+
+    # 模拟已进入“手机”品牌选择阶段，用户询问“有哪些品牌”
+    context_manager = EnhancedConversationContext()
+    context_manager.update_context("current_category", "手机")
+    context_manager.set_stage("brand_select")
+
+    ctx = context_manager.get_context()
+    ctx["_manager"] = context_manager
+    ctx["user_input"] = "有哪些品牌？"
+    ctx["knowledge"] = knowledge
+
+    responses = interpreter.execute("product_query", ctx)
+
+    brands = knowledge.get_brands_in_category("手机")
+    # 期望响应中既提到“品牌”，又至少包含一个知识库中的品牌名
+    assert any("品牌" in r and any(b in r for b in brands) for r in responses)
+
+
+def test_suggest_series_uses_product_knowledge():
+    """SUGGEST_SERIES 应基于 ProductKnowledge 动态给出系列/型号列表"""
+    dsl_path = os.path.join(project_root, 'src', 'scripts', 'ecommerce.dsl')
+    with open(dsl_path, 'r', encoding='utf-8') as f:
+        dsl_content = f.read()
+
+    parser = DSLParser()
+    parsed_dsl = parser.parse(dsl_content)
+    interpreter = DSLInterpreter(parsed_dsl)
+    knowledge = ProductKnowledge()
+
+    # 模拟已进入“电脑-苹果”系列选择阶段，用户询问“有哪些系列”
+    context_manager = EnhancedConversationContext()
+    context_manager.update_context("current_category", "电脑")
+    context_manager.update_context("current_brand", "苹果")
+    context_manager.set_stage("series_select")
+
+    ctx = context_manager.get_context()
+    ctx["_manager"] = context_manager
+    ctx["user_input"] = "有哪些系列？"
+    ctx["knowledge"] = knowledge
+
+    responses = interpreter.execute("product_query", ctx)
+
+
+
+def test_suggest_series_for_ipad_and_imac_uses_product_knowledge():
+    """SUGGEST_SERIES 在 iPad / iMac 场景下应基于 ProductKnowledge 输出系列列表"""
+    dsl_path = os.path.join(project_root, 'src', 'scripts', 'ecommerce.dsl')
+    with open(dsl_path, 'r', encoding='utf-8') as f:
+        dsl_content = f.read()
+
+    parser = DSLParser()
+    parsed_dsl = parser.parse(dsl_content)
+    interpreter = DSLInterpreter(parsed_dsl)
+    knowledge = ProductKnowledge()
+
+    # 场景1：平板-苹果（iPad）系列列表
+    context_manager_ipad = EnhancedConversationContext()
+    context_manager_ipad.update_context("current_category", "平板")
+    context_manager_ipad.update_context("current_brand", "苹果")
+    context_manager_ipad.set_stage("series_select")
+
+    ctx_ipad = context_manager_ipad.get_context()
+    ctx_ipad["_manager"] = context_manager_ipad
+    ctx_ipad["user_input"] = "有哪些系列？"
+    ctx_ipad["knowledge"] = knowledge
+
+    responses_ipad = interpreter.execute("product_query", ctx_ipad)
+    series_ipad = knowledge.get_series_in_brand("平板", "苹果")
+    assert any("iPad" in s for s in series_ipad)
+    assert any(any(s in r for s in series_ipad) for r in responses_ipad)
+
+    # 场景2：电脑-苹果-台式机（iMac / Mac mini / Mac Studio）系列列表
+    context_manager_desktop = EnhancedConversationContext()
+    context_manager_desktop.update_context("current_category", "电脑")
+    context_manager_desktop.update_context("current_subtype", "台式机")
+    context_manager_desktop.update_context("current_brand", "苹果")
+    context_manager_desktop.set_stage("series_select")
+
+    ctx_desktop = context_manager_desktop.get_context()
+    ctx_desktop["_manager"] = context_manager_desktop
+    ctx_desktop["user_input"] = "有哪些系列？"
+    ctx_desktop["knowledge"] = knowledge
+
+    responses_desktop = interpreter.execute("product_query", ctx_desktop)
+    series_desktop = knowledge.get_series_in_brand("电脑", "苹果")
+    # 期望包含 iMac / Mac mini / Mac Studio 等桌面系列
+    assert any("iMac" in s or "Mac mini" in s or "Mac Studio" in s for s in series_desktop)
+    assert any(any(s in r for s in series_desktop) for r in responses_desktop)
+
+    series_list = knowledge.get_series_in_brand("电脑", "苹果")
+
+
+def test_usage_scenario_recommendation_study_laptop():
+    """当用户在电脑品类下提到“适合学习”的需求时，应基于知识库给出推荐"""
+    dsl_path = os.path.join(project_root, 'src', 'scripts', 'ecommerce.dsl')
+    with open(dsl_path, 'r', encoding='utf-8') as f:
+        dsl_content = f.read()
+
+    parser = DSLParser()
+    parsed_dsl = parser.parse(dsl_content)
+    interpreter = DSLInterpreter(parsed_dsl)
+    knowledge = ProductKnowledge()
+
+    # 模拟场景：用户已选择电脑品类，在系列选择阶段说“推荐一个适合学习的电脑”
+    context_manager = EnhancedConversationContext()
+    context_manager.update_context("current_category", "电脑")
+    context_manager.set_stage("series_select")
+
+    ctx = context_manager.get_context()
+    ctx["_manager"] = context_manager
+    ctx["user_input"] = "给我推荐一个适合学习的电脑"
+    ctx["knowledge"] = knowledge
+
+    responses = interpreter.execute("product_query", ctx)
+
+    # 知识库中在“电脑 + 学习”场景下，应推荐苹果相关机型（如 MacBook）
+    assert any("苹果" in r or "MacBook" in r for r in responses)
+    # 同时应该出现“学习”这样的场景词，表明是用途推荐而不是普通流程文案
+    assert any("学习" in r for r in responses)
+
+
+
+def test_describe_series_config_uses_product_knowledge():
+    """DESCRIBE_SERIES_CONFIG 应基于 ProductKnowledge 输出系列配置"""
+    dsl_path = os.path.join(project_root, 'src', 'scripts', 'ecommerce.dsl')
+    with open(dsl_path, 'r', encoding='utf-8') as f:
+        dsl_content = f.read()
+
+    parser = DSLParser()
+    parsed_dsl = parser.parse(dsl_content)
+    interpreter = DSLInterpreter(parsed_dsl)
+    knowledge = ProductKnowledge()
+
+    # 场景：电脑-苹果，处于系列选择阶段，用户选择 MacBook Air
+    context_manager = EnhancedConversationContext()
+    context_manager.update_context("current_category", "电脑")
+    context_manager.update_context("current_brand", "苹果")
+    context_manager.set_stage("series_select")
+
+    ctx = context_manager.get_context()
+    ctx["_manager"] = context_manager
+    ctx["user_input"] = "air 13寸"
+    ctx["knowledge"] = knowledge
+
+    responses = interpreter.execute("product_query", ctx)
+
+    # 期望由知识库驱动，出现 MacBook Air 以及配置描述
+    assert any("MacBook Air" in r for r in responses)
+    assert any("13.6寸" in r for r in responses)
+
 
 if __name__ == "__main__":
     print("🚀 开始记忆功能测试套件...")
