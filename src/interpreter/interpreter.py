@@ -55,18 +55,22 @@ class DSLInterpreter(IInterpreter):
                 "config_select", "storage_select", "color_select", "chip_select", "series_select",
                 "phone_model_select", "phone_storage_select", "phone_color_select", 
                 "size_select", "subtype_select", "brand_select",
-                # 餐饮数字选择阶段
-                "date_collect", "final_confirm"
-                # 注意：details_collect, budget_collect, contact_collect 是自由文本输入，不需要验证
+                # 注意：details_collect, budget_collect, contact_collect, date_collect, final_confirm 是自由文本输入，不需要验证
             ]
             if user_text and current_stage in numeric_choice_stages:
                 validation_result = self._validate_stage_input(user_text, current_stage, context)
                 if validation_result["valid"]:
                     # 有效输入：根据阶段类型处理
                     if current_stage == "config_select":
-                        return self._process_valid_config_choice(user_text, context, manager)
+                        # 只有数字输入才走硬编码处理，非数字输入交给DSL规则
+                        if user_text.isdigit():
+                            return self._process_valid_config_choice(user_text, context, manager)
+                        # 非数字输入：可能是切换产品、重新开始等，让DSL规则处理
+                        else:
+                            detected_intent = "product_query"
                     # 其他阶段的有效输入让DSL规则处理
-                    detected_intent = "product_query"
+                    else:
+                        detected_intent = "product_query"
                 else:
                     # 无效输入：返回阶段特定的引导信息，不改变状态
                     return validation_result["error_response"]
@@ -120,62 +124,99 @@ class DSLInterpreter(IInterpreter):
                     manager.update_context("contact", user_text)
 
             # 在品牌选择阶段支持数字选择品牌
-            if current_stage == "brand_select" and user_text.isdigit():
+            if current_stage == "brand_select":
                 knowledge = context.get("knowledge")
                 category = context.get("current_category")
                 if knowledge and category:
-                    try:
-                        brands = knowledge.get_brands_in_category(category)
-                    except Exception:
-                        brands = []
-                    try:
-                        idx = int(user_text) - 1
-                        if 0 <= idx < len(brands):
-                            brand = brands[idx]
-                            manager = context.get('_manager')
-                            if manager:
-                                manager.update_context("current_brand", brand)
-                                manager.add_to_chain("brand", brand)
-                                manager.set_stage("series_select")
-                            action = {'type': 'suggest_series'}
-                            context_manager = context.get('_manager')
-                            series_responses = self._handle_suggest_series(action, context, context_manager)
-                            if series_responses:
-                                return series_responses
-                    except Exception:
-                        pass
+                    # 支持数字选择
+                    if user_text.isdigit():
+                        try:
+                            brands = knowledge.get_brands_in_category(category)
+                        except Exception:
+                            brands = []
+                        try:
+                            idx = int(user_text) - 1
+                            if 0 <= idx < len(brands):
+                                brand = brands[idx]
+                                manager = context.get('_manager')
+                                if manager:
+                                    manager.update_context("current_brand", brand)
+                                    manager.add_to_chain("brand", brand)
+                                    manager.set_stage("series_select")
+                                action = {'type': 'suggest_series'}
+                                context_manager = context.get('_manager')
+                                series_responses = self._handle_suggest_series(action, context, context_manager)
+                                if series_responses:
+                                    return series_responses
+                        except Exception:
+                            pass
+                    # 支持品牌名称直接输入（如"海底捞"、"西贝"等）
+                    else:
+                        try:
+                            # 使用知识库的canonicalize方法识别品牌名称
+                            canonical_brand = knowledge.canonicalize("brand", user_text)
+                            if canonical_brand:
+                                if manager:
+                                    manager.update_context("current_brand", canonical_brand)
+                                    manager.add_to_chain("brand", canonical_brand)
+                                    manager.set_stage("series_select")
+                                action = {'type': 'suggest_series'}
+                                context_manager = context.get('_manager')
+                                series_responses = self._handle_suggest_series(action, context, context_manager)
+                                if series_responses:
+                                    return series_responses
+                        except Exception:
+                            pass
 
-            # 在系列选择阶段支持数字选择系列
-            if current_stage == "series_select" and user_text.isdigit():
+            # 在系列选择阶段支持数字选择系列和直接输入系列名
+            if current_stage == "series_select":
                 knowledge = context.get("knowledge")
                 category = context.get("current_category")
                 brand = context.get("current_brand")
                 context_manager = context.get('_manager')
                 if knowledge and category and brand:
-                    try:
-                        series_list = knowledge.get_series_in_brand(category, brand)
-                        subtype = context.get("current_subtype")
-                        if context_manager and not subtype:
-                            cm_ctx = context_manager.get_context()
-                            subtype = cm_ctx.get("current_subtype")
-                        series_list = knowledge.filter_series_by_subtype(category, subtype, series_list)
-                    except Exception:
-                        series_list = []
-                    try:
-                        idx = int(user_text) - 1
-                        if 0 <= idx < len(series_list):
-                            series = series_list[idx]
-                            manager = context.get('_manager')
-                            if manager:
-                                manager.update_context("current_series", series)
-                                manager.add_to_chain("series", series)
-                                manager.set_stage("config_select")
-                            action = {'type': 'describe_series_config'}
-                            desc_responses = self._handle_describe_series_config(action, context, context_manager)
-                            if desc_responses:
-                                return desc_responses
-                    except Exception:
-                        pass
+                    # 支持数字选择
+                    if user_text.isdigit():
+                        try:
+                            series_list = knowledge.get_series_in_brand(category, brand)
+                            subtype = context.get("current_subtype")
+                            if context_manager and not subtype:
+                                cm_ctx = context_manager.get_context()
+                                subtype = cm_ctx.get("current_subtype")
+                            series_list = knowledge.filter_series_by_subtype(category, subtype, series_list)
+                        except Exception:
+                            series_list = []
+                        try:
+                            idx = int(user_text) - 1
+                            if 0 <= idx < len(series_list):
+                                series = series_list[idx]
+                                manager = context.get('_manager')
+                                if manager:
+                                    manager.update_context("current_series", series)
+                                    manager.add_to_chain("series", series)
+                                    manager.set_stage("config_select")
+                                action = {'type': 'describe_series_config'}
+                                desc_responses = self._handle_describe_series_config(action, context, context_manager)
+                                if desc_responses:
+                                    return desc_responses
+                        except Exception:
+                            pass
+                    # 支持系列名称直接输入（如"午餐套餐"、"晚餐套餐"等）
+                    else:
+                        try:
+                            canonical_series = knowledge.canonicalize("series", user_text)
+                            if canonical_series:
+                                manager = context.get('_manager')
+                                if manager:
+                                    manager.update_context("current_series", canonical_series)
+                                    manager.add_to_chain("series", canonical_series)
+                                    manager.set_stage("config_select")
+                                action = {'type': 'describe_series_config'}
+                                desc_responses = self._handle_describe_series_config(action, context, context_manager)
+                                if desc_responses:
+                                    return desc_responses
+                        except Exception:
+                            pass
 
         # 额外处理：基于用途场景（学习/办公/游戏等）的推荐
         scenario_responses = self._handle_usage_scenario(user_text, context)
@@ -455,16 +496,11 @@ class DSLInterpreter(IInterpreter):
     def _match_rule(self, rule: Dict, detected_intent: str, context: Dict[str, Any]) -> bool:
         """检查规则是否匹配，支持意图和上下文条件"""
 
-        # print(f"正在匹配规则: {rule['name']}")
-        # print(f"当前上下文: {context}")
-
         for condition in rule["conditions"]:
             ctype = condition["type"]
-            # print(f"  检查条件: {ctype} - {condition}")
 
             if ctype == "intent":
                 if condition.get("intent_name") != detected_intent:
-                    # print(f"  意图不匹配: 期望{condition.get('intent_name')}, 实际{detected_intent}")
                     return False
 
             elif ctype == "user_mention":
@@ -511,7 +547,13 @@ class DSLInterpreter(IInterpreter):
                 # 
                 if value is None and "session_variables" in context:
                     value = context["session_variables"].get(var_name)
-                # 
+                # 如果还没找到，从context_manager中查找
+                if value is None:
+                    manager = context.get('_manager')
+                    if manager:
+                        manager_context = manager.get_context()
+                        value = manager_context.get(var_name)
+                # 如果value仍然为None，条件不满足
                 if value is None:
                     return False
                 # 
@@ -648,10 +690,9 @@ class DSLInterpreter(IInterpreter):
         # 2. 如果缺失，再尝试从上下文管理器中获取最新值（支持“同一 THEN 内先 SET_VAR 再 SUGGEST_SERIES”的场景）
         if context_manager is not None:
             cm_ctx = context_manager.get_context()
-            if not category:
-                category = cm_ctx.get("current_category")
-            if not brand:
-                brand = cm_ctx.get("current_brand")
+            # 总是使用最新值，而不是仅在缺失时补偿
+            category = cm_ctx.get("current_category") or category
+            brand = cm_ctx.get("current_brand") or brand
 
         if not category or not brand:
             return ["[KB] 要为您推荐系列，请先确定品类和品牌，例如先说‘我要买苹果的电脑/手机’。"]
@@ -799,30 +840,49 @@ class DSLInterpreter(IInterpreter):
         return []
 
     def _validate_config_input(self, user_input: str, context: Dict[str, Any]) -> bool:
-        """验证配置选择阶段的用户输入是否合法"""
+        """验证配置选择阶段的用户输入是否合法
+        
+        返回True表示输入有效，可以继续处理
+        - 数字输入：检查是否在有效范围内
+        - 非数字输入：返回True，交给DSL规则处理（可能是切换产品、重新开始等）
+        """
         if not user_input.strip():
             return False
         
-        # 检查是否为有效的数字选择
-        if user_input.isdigit():
-            try:
-                choice_num = int(user_input)
-                current_series = context.get("current_series", "")
-                
-                # 根据不同系列验证有效范围 - 大部分系列都有2个配置选项
-                if current_series in ["Mac mini", "MacBook Air", "MacBook Pro", "iMac", "Mac Studio"]:
-                    return choice_num in [1, 2]
-                elif current_series in ["iPad Pro", "iPad Air", "iPad", "iPad mini"]:
-                    return choice_num in [1, 2]
-                # 默认允许1和2
-                else:
-                    return choice_num in [1, 2]
-                    
-            except ValueError:
-                pass
+        # 非数字输入：可能是用户想切换产品类别、重新开始等，让DSL规则处理
+        if not user_input.isdigit():
+            return True
         
-        # 检查是否为有效的关键词选择（暂时不支持，可以后续扩展）
-        return False
+        # 数字输入：验证是否在有效范围内
+        try:
+            choice_num = int(user_input)
+            current_series = context.get("current_series", "")
+            knowledge = context.get("knowledge")
+            
+            # 尝试从知识库获取实际配置数量（适用于餐饮和电商）
+            if knowledge:
+                try:
+                    category = context.get("current_category", "")
+                    brand = context.get("current_brand", "")
+                    configs = knowledge.get_series_configs(category, brand, current_series)
+                    if configs:
+                        # 根据实际配置数量验证
+                        return choice_num in range(1, len(configs) + 1)
+                except Exception:
+                    pass
+            
+            # 回退到硬编码验证（电商产品）
+            if current_series in ["Mac mini", "MacBook Air", "MacBook Pro", "iMac", "Mac Studio"]:
+                return choice_num in [1, 2]
+            elif current_series in ["iPad Pro", "iPad Air", "iPad", "iPad mini"]:
+                return choice_num in [1, 2]
+            # 默认允许1和2
+            else:
+                return choice_num in [1, 2]
+                
+        except ValueError:
+            # 数字解析失败，不应该发生（因为前面检查了isdigit）
+            return False
     
     def _process_valid_config_choice(self, user_input: str, context: Dict[str, Any], manager: Any) -> List[str]:
         """处理有效的配置选择"""
@@ -888,7 +948,35 @@ class DSLInterpreter(IInterpreter):
                     "📦 您可以继续了解其他产品或询问更多详情。"
                 ]
             
-            # 如果没有匹配到系列，返回通用成功消息
+            # 餐饮系列：选择时间配置后进入人数收集阶段
+            elif current_series in ["午餐套餐", "晚餐套餐", "家庭套餐", "午市精选", "晚市精选", "商务简餐", "家庭聚餐"]:
+                # 获取配置选项（时间段）
+                knowledge = context.get("knowledge")
+                config_name = f"配置{choice_num}"
+                
+                if knowledge:
+                    try:
+                        category = context.get("current_category", "餐饮")
+                        brand = context.get("current_brand", "")
+                        configs = knowledge.get_series_configs(category, brand, current_series)
+                        if configs and 0 <= choice_num - 1 < len(configs):
+                            config_name = configs[choice_num - 1]
+                    except Exception:
+                        pass
+                
+                if manager:
+                    manager.update_context("selected_time", config_name)
+                    manager.set_stage("details_collect")
+                
+                # 返回配置选择确认和人数提示
+                party_size_prompt = "请问您有几位用餐？需要包间吗？"
+                
+                return [
+                    f"✅ 已选择 {current_series} - {config_name}",
+                    f"{party_size_prompt}"
+                ]
+            
+            # 如果没有匹配到系列，返回通用成功消息（保留电商兼容性）
             if manager:
                 manager.update_context("selected_config", f"配置{choice_num}")
                 manager.set_stage("completed")
@@ -916,6 +1004,15 @@ class DSLInterpreter(IInterpreter):
         # 合并context和context_manager的数据，context_manager优先
         merged_context = {**context, **cm_context}
 
+        # 处理selected_time：去掉前面的序号（如"2. 17:30"变成"17:30"）
+        selected_time_raw = str(merged_context.get("selected_time", ""))
+        selected_time_clean = selected_time_raw
+        if selected_time_raw and ". " in selected_time_raw:
+            # 去掉"数字. "前缀
+            parts = selected_time_raw.split(". ", 1)
+            if len(parts) == 2 and parts[0].isdigit():
+                selected_time_clean = parts[1]
+
         replacements = {
             "current_category": str(merged_context.get("current_category", "")),
             "current_subtype": str(merged_context.get("current_subtype", "")),
@@ -925,7 +1022,7 @@ class DSLInterpreter(IInterpreter):
             "party_size": str(merged_context.get("party_size", "")),
             "private_room": str(merged_context.get("private_room", "")),
             "selected_date": str(merged_context.get("selected_date", "")),
-            "selected_time": str(merged_context.get("selected_time", "")),
+            "selected_time": selected_time_clean,
             "budget": str(merged_context.get("budget", "")),
             "contact": str(merged_context.get("contact", "")),
             "selected_config_index": str(merged_context.get("selected_config_index", "")),

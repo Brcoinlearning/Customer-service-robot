@@ -344,13 +344,22 @@ class ProductKnowledge:
             "series": {
                 "air": "MacBook Air",
                 "macbook air": "MacBook Air",
-                "pro": "MacBook Pro",
+                # 精确笔记本系列别名，避免与 iPhone 16 Pro 冲突
+                "macbook pro": "MacBook Pro",
                 "macbook pro": "MacBook Pro",
                 "imac": "iMac",
                 "mini": "Mac mini",
                 "mac mini": "Mac mini",
                 "studio": "Mac Studio",
                 "mac studio": "Mac Studio",
+                # iPhone 系列别名
+                "16 pro": "iPhone 16 Pro 系列",
+                "16pro": "iPhone 16 Pro 系列",
+                "iphone 16 pro": "iPhone 16 Pro 系列",
+                "16": "iPhone 16 系列",
+                "iphone 16": "iPhone 16 系列",
+                "15": "iPhone 15 系列",
+                "iphone 15": "iPhone 15 系列",
             },
             "category": {
                 "电脑": "电脑",

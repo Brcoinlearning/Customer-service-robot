@@ -85,6 +85,13 @@ THEN
 RESPOND_KB "budget_prompt"
 SET_STAGE "budget_collect"
 
+RULE date_to_budget_unknown
+WHEN INTENT_IS unknown
+AND CONTEXT_STAGE_IS "date_collect"
+THEN
+RESPOND_KB "budget_prompt"
+SET_STAGE "budget_collect"
+
 RULE budget_to_contact
 WHEN INTENT_IS booking_query
 AND CONTEXT_STAGE_IS "budget_collect"
@@ -99,6 +106,13 @@ THEN
 RESPOND_KB "contact_prompt"
 SET_STAGE "contact_collect"
 
+RULE budget_to_contact_unknown
+WHEN INTENT_IS unknown
+AND CONTEXT_STAGE_IS "budget_collect"
+THEN
+RESPOND_KB "contact_prompt"
+SET_STAGE "contact_collect"
+
 RULE summary_on_contact
 WHEN INTENT_IS booking_query
 AND CONTEXT_STAGE_IS "contact_collect"
@@ -108,6 +122,13 @@ SET_STAGE "final_confirm"
 
 RULE summary_on_contact_confirm
 WHEN INTENT_IS confirm
+AND CONTEXT_STAGE_IS "contact_collect"
+THEN
+RESPOND_KB "booking_summary_prompt"
+SET_STAGE "final_confirm"
+
+RULE summary_on_contact_unknown
+WHEN INTENT_IS unknown
 AND CONTEXT_STAGE_IS "contact_collect"
 THEN
 RESPOND_KB "booking_summary_prompt"
@@ -184,4 +205,4 @@ RULE fallback_completed
 WHEN INTENT_IS fallback
 AND CONTEXT_STAGE_IS "completed"
 THEN
-RESPOND "👋 您的预订已完成，如需重新预订，请说'订餐'或'重新开始'。"
+RESPOND "👋 您的预订已完成，如需重新预订，请说‘订餐’或‘重新开始’。"

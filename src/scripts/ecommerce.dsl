@@ -870,6 +870,50 @@ THEN
     RESPOND_KB "fallback_series_select_prompt"
     SUGGEST_SERIES
 
+# 配置选择阶段 - 允许切换到手机类别
+RULE product_query_switch_to_phone_from_config
+WHEN INTENT_IS product_query
+    AND CONTEXT_STAGE_IS "config_select"
+    AND USER_MENTION_ANY "手机|iphone|iPhone"
+THEN
+    SET_VAR current_category = "手机"
+    ADD_TO_CHAIN type = "category" value = "手机"
+    SET_VAR current_brand = "苹果"
+    ADD_TO_CHAIN type = "brand" value = "苹果"
+    CLEAR_VAR current_series
+    SET_STAGE "series_select"
+    RESPOND "好的，我们来看看手机产品！"
+    SUGGEST_SERIES
+
+# 配置选择阶段 - 允许切换到电脑类别
+RULE product_query_switch_to_computer_from_config
+WHEN INTENT_IS product_query
+    AND CONTEXT_STAGE_IS "config_select"
+    AND USER_MENTION_ANY "电脑|计算机|笔记本|台式机|macbook|mac|Mac"
+THEN
+    SET_VAR current_category = "电脑"
+    ADD_TO_CHAIN type = "category" value = "电脑"
+    CLEAR_VAR current_brand
+    CLEAR_VAR current_series
+    SET_STAGE "subtype_select"
+    RESPOND "好的，我们来看看电脑产品！"
+    RESPOND_KB "computer_subtype_prompt"
+
+# 配置选择阶段 - 允许切换到平板类别
+RULE product_query_switch_to_ipad_from_config
+WHEN INTENT_IS product_query
+    AND CONTEXT_STAGE_IS "config_select"
+    AND USER_MENTION_ANY "iPad|ipad|平板|平板电脑"
+THEN
+    SET_VAR current_category = "平板"
+    ADD_TO_CHAIN type = "category" value = "平板"
+    SET_VAR current_brand = "苹果"
+    ADD_TO_CHAIN type = "brand" value = "苹果"
+    CLEAR_VAR current_series
+    SET_STAGE "series_select"
+    RESPOND "好的，我们来看看iPad产品！"
+    SUGGEST_SERIES
+
 # 通用配置选择规则 - 处理有效的数字输入
 RULE product_query_valid_config_choice
 WHEN INTENT_IS product_query
