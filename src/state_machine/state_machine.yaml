@@ -1,0 +1,288 @@
+# 状态机初版描述 (可迭代)
+# 目标：统一表达对话/产品配置流程的状态、事件、守卫与动作。
+# 约定：
+# - state: 唯一状态名称
+# - type: normal | terminal | pseudo(normalizing)
+# - events: 可触发转移的事件标识（由解释器在规范化阶段产生）
+# - transitions: 列出 (on,event)-> target + guards + actions
+# - guard 表达式为布尔标签，具体逻辑在解释器中实现（高置信度/上下文满足等）
+# - action 标记语义动作，仍可由 DSL 或解释器映射（更新上下文、发送模板等）
+# - shortcuts: 高置信度直达白名单（输入词→event）
+
+version: 0.1
+
+shortcuts:
+  # 仅保留绝对无歧义的高置信度直达
+  - phrase: "mac"
+    event: choose_category_computer
+    confidence: 1.0
+  - phrase: "iphone"
+    event: choose_category_phone
+    confidence: 1.0
+
+states:
+  - state: normalizing_input
+    type: pseudo
+    description: 输入规范化/别名展开/数字解析/语义评分聚合
+    emits:
+      - numeric_choice         # 纯数字输入
+      - semantic_keyword       # 本地高置信度语义关键词
+      - ambiguous              # 低置信度或多候选
+      - direct_shortcut        # 命中 shortcuts 表
+      - free_text              # 其他文本保留交 DSL 或 LLM
+
+  - state: welcome
+    type: normal
+    transitions:
+      - on: choose_category_computer
+        target: subtype_select
+        guards: [high_confidence]
+        actions: [set_category_computer, inc_query]
+      - on: choose_category_phone
+        target: phone_model_select
+        guards: [high_confidence]
+        actions: [set_category_phone, set_brand_apple, inc_query]
+      - on: ask_category_repeat
+        target: category_select
+        actions: [inc_query]
+
+  - state: category_select
+    type: normal
+    transitions:
+      - on: choose_category_computer
+        target: subtype_select
+        actions: [set_category_computer]
+      - on: choose_category_phone
+        target: phone_model_select
+        actions: [set_category_phone, set_brand_apple]
+      - on: choose_category_tablet
+        target: series_select
+        actions: [set_category_tablet, set_brand_apple]
+
+  - state: subtype_select
+    type: normal
+    transitions:
+      - on: choose_subtype_laptop
+        target: brand_select
+        actions: [set_subtype_laptop]
+      - on: choose_subtype_desktop
+        target: brand_select
+        actions: [set_subtype_desktop]
+
+  - state: brand_select
+    type: normal
+    transitions:
+      - on: choose_brand_apple
+        target: series_select
+        actions: [set_brand_apple, suggest_series]
+
+  - state: series_select
+    type: normal
+    transitions:
+      - on: choose_series_air
+        target: config_select
+        actions: [set_series_air, describe_series]
+      - on: choose_series_pro
+        target: config_select
+        actions: [set_series_pro, describe_series]
+      - on: choose_series_imac
+        target: config_select
+        actions: [set_series_imac, describe_series]
+      - on: choose_series_mac_mini
+        target: config_select
+        actions: [set_series_mac_mini, describe_series]
+      - on: choose_series_mac_studio
+        target: config_select
+        actions: [set_series_mac_studio, describe_series]
+      - on: choose_series_ipad_pro
+        target: config_select
+        actions: [set_series_ipad_pro, describe_series]
+      - on: choose_series_ipad_air
+        target: config_select
+        actions: [set_series_ipad_air, describe_series]
+      - on: choose_series_ipad
+        target: config_select
+        actions: [set_series_ipad, describe_series]
+      - on: choose_series_ipad_mini
+        target: config_select
+        actions: [set_series_ipad_mini, describe_series]
+      - on: choose_series_phone_16_pro
+        target: phone_storage_select
+        actions: [set_series_phone_16_pro, describe_series]
+      - on: choose_series_phone_16
+        target: phone_storage_select
+        actions: [set_series_phone_16, describe_series]
+      - on: choose_series_phone_15
+        target: phone_storage_select
+        actions: [set_series_phone_15, describe_series]
+
+  - state: config_select
+    type: normal
+    transitions:
+      - on: choose_air_13
+        target: storage_select
+        actions: [set_size_13, show_storage_air_13]
+      - on: choose_air_15
+        target: storage_select
+        actions: [set_size_15, show_storage_air_15]
+      - on: choose_pro_14
+        target: chip_select
+        actions: [set_size_14, show_chip_pro_14]
+      - on: choose_pro_16
+        target: chip_select
+        actions: [set_size_16, show_chip_pro_16]
+      - on: choose_desktop_basic
+        target: completed
+        actions: [set_desktop_basic]
+      - on: choose_desktop_advanced
+        target: completed
+        actions: [set_desktop_advanced]
+
+  - state: chip_select
+    type: normal
+    transitions:
+      - on: choose_chip_m3
+        target: storage_select
+        actions: [set_chip_m3, show_storage_m3]
+      - on: choose_chip_m3_pro
+        target: storage_select
+        actions: [set_chip_m3_pro, show_storage_m3_pro]
+      - on: choose_chip_m3_max
+        target: storage_select
+        guards: [size_allows_max]
+        actions: [set_chip_m3_max, show_storage_m3_max]
+
+  - state: storage_select
+    type: normal
+    transitions:
+      - on: choose_storage_256
+        target: color_select
+        actions: [set_storage_256, show_colors_mac]
+      - on: choose_storage_512
+        target: color_select
+        actions: [set_storage_512, show_colors_mac]
+      - on: choose_storage_1tb
+        target: color_select
+        guards: [series_allows_1tb]
+        actions: [set_storage_1tb, show_colors_mac]
+      - on: choose_storage_2tb
+        target: color_select
+        guards: [series_allows_2tb]
+        actions: [set_storage_2tb, show_colors_mac]
+
+  - state: color_select
+    type: normal
+    transitions:
+      - on: choose_color_gray
+        target: completed
+        actions: [set_color_gray, finalize]
+      - on: choose_color_silver
+        target: completed
+        actions: [set_color_silver, finalize]
+      - on: choose_color_starlight
+        target: completed
+        actions: [set_color_starlight, finalize]
+      - on: choose_color_midnight
+        target: completed
+        actions: [set_color_midnight, finalize]
+
+  - state: phone_model_select
+    type: normal
+    transitions:
+      - on: choose_series_phone_16_pro
+        target: phone_storage_select
+        actions: [set_series_phone_16_pro, show_phone_storage]
+      - on: choose_series_phone_16
+        target: phone_storage_select
+        actions: [set_series_phone_16, show_phone_storage]
+      - on: choose_series_phone_15
+        target: phone_storage_select
+        actions: [set_series_phone_15, show_phone_storage]
+
+  - state: phone_storage_select
+    type: normal
+    transitions:
+      - on: choose_phone_storage_128
+        target: phone_color_select
+        actions: [set_phone_storage_128, show_phone_colors]
+      - on: choose_phone_storage_256
+        target: phone_color_select
+        actions: [set_phone_storage_256, show_phone_colors]
+      - on: choose_phone_storage_512
+        target: phone_color_select
+        actions: [set_phone_storage_512, show_phone_colors]
+      - on: choose_phone_storage_1tb
+        target: phone_color_select
+        guards: [series_allows_phone_1tb]
+        actions: [set_phone_storage_1tb, show_phone_colors]
+
+  - state: phone_color_select
+    type: normal
+    transitions:
+      - on: choose_phone_color_black
+        target: completed
+        actions: [set_phone_color_black, finalize]
+      - on: choose_phone_color_white
+        target: completed
+        actions: [set_phone_color_white, finalize]
+      - on: choose_phone_color_blue
+        target: completed
+        actions: [set_phone_color_blue, finalize]
+      - on: choose_phone_color_natural
+        target: completed
+        actions: [set_phone_color_natural, finalize]
+
+  - state: completed
+    type: terminal
+    transitions:
+      - on: add_to_cart
+        target: cart_added
+        actions: [add_to_cart]
+
+  - state: cart_added
+    type: normal
+    transitions:
+      - on: continue_shopping
+        target: welcome
+        actions: [reset_context]
+      - on: view_cart
+        target: viewing_cart
+        actions: [show_cart]
+      - on: checkout
+        target: checkout
+        actions: [show_checkout]
+
+  - state: viewing_cart
+    type: normal
+    transitions:
+      - on: checkout
+        target: checkout
+        actions: [show_checkout]
+      - on: continue_shopping
+        target: welcome
+        actions: [reset_context]
+
+  - state: checkout
+    type: normal
+    transitions:
+      - on: confirm_order
+        target: order_completed
+        actions: [confirm_order]
+      - on: cancel_order
+        target: welcome
+        actions: [reset_context]
+
+  - state: order_completed
+    type: terminal
+
+# 守卫定义（解释器内实现）
+# - high_confidence: 语义/快捷词评分 ≥ 阈值
+# - size_allows_max: 当前尺寸支持 M3 Max
+# - series_allows_1tb: 当前 Mac 系列/芯片支持 1TB
+# - series_allows_2tb: 当前 Mac 系列/芯片支持 2TB
+# - series_allows_phone_1tb: 当前手机系列允许 1TB（仅 Pro 系列）
+
+# 后续迭代：
+# 1. 将现有 DSL 规则映射到此表的事件触发器
+# 2. 生成反向索引：每个事件对应的可用状态+守卫，供静态分析
+# 3. 编写 check_dsl.py 读取此文件对比 DSL 实际使用情况
