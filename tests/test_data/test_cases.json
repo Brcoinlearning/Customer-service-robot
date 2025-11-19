@@ -1,0 +1,172 @@
+{
+  "dsl_test_cases": [
+    {
+      "name": "基础DSL解析测试",
+      "description": "测试基本的INTENT和RULE解析",
+      "dsl_content": "INTENT greeting: \"问候\"\nINTENT help: \"帮助\"\n\nRULE test_rule\nWHEN INTENT_IS greeting\nTHEN\n    RESPOND \"Hello\"\n    RESPOND \"How can I help you?\"",
+      "expected_intents": ["greeting", "help"],
+      "expected_rules": 1
+    },
+    {
+      "name": "复杂DSL解析测试",
+      "description": "测试带条件和动作的复杂DSL",
+      "dsl_content": "INTENT product_query: \"产品咨询\"\n\nRULE first_inquiry\nWHEN INTENT_IS product_query AND CONTEXT_HAS \"query_count\" = 0\nTHEN\n    RESPOND \"首次咨询\"\n    INCREMENT \"query_count\"\n    SET_STAGE \"category_select\"",
+      "expected_intents": ["product_query"],
+      "expected_rules": 1
+    }
+  ],
+  
+  "intent_detection_test_cases": [
+    {
+      "category": "问候语识别",
+      "test_cases": [
+        {"input": "你好", "expected_intent": "greeting"},
+        {"input": "您好", "expected_intent": "greeting"},
+        {"input": "hi", "expected_intent": "greeting"},
+        {"input": "早上好", "expected_intent": "greeting"}
+      ]
+    },
+    {
+      "category": "产品查询识别",
+      "test_cases": [
+        {"input": "我想买电脑", "expected_intent": "product_query"},
+        {"input": "有什么手机推荐", "expected_intent": "product_query"},
+        {"input": "苹果电脑多少钱", "expected_intent": "product_query"},
+        {"input": "MacBook Air配置", "expected_intent": "product_query"},
+        {"input": "1", "expected_intent": "product_query", "context": {"current_stage": "series_select"}},
+        {"input": "2", "expected_intent": "product_query", "context": {"current_stage": "config_select"}}
+      ]
+    },
+    {
+      "category": "购物车操作识别",
+      "test_cases": [
+        {"input": "加入购物车", "expected_intent": "cart_operation"},
+        {"input": "重置", "expected_intent": "cart_operation"},
+        {"input": "还是买手机吧", "expected_intent": "cart_operation"},
+        {"input": "清空", "expected_intent": "cart_operation"}
+      ]
+    },
+    {
+      "category": "确认操作识别",
+      "test_cases": [
+        {"input": "是的", "expected_intent": "confirmation", "context": {"current_stage": "cart_added"}},
+        {"input": "好的", "expected_intent": "confirmation", "context": {"current_stage": "checkout"}},
+        {"input": "不要", "expected_intent": "confirmation", "context": {"current_stage": "completed"}},
+        {"input": "可以", "expected_intent": "confirmation"}
+      ]
+    },
+    {
+      "category": "餐饮查询识别",
+      "test_cases": [
+        {"input": "订餐", "expected_intent": "dining_query"},
+        {"input": "预定包间", "expected_intent": "dining_query"},
+        {"input": "海底捞", "expected_intent": "dining_query"},
+        {"input": "火锅", "expected_intent": "dining_query"}
+      ]
+    }
+  ],
+  
+  "scenario_test_cases": [
+    {
+      "name": "电商完整流程",
+      "description": "从问候到完成购买的完整电商场景",
+      "steps": [
+        {"user_input": "你好", "expected_intent": "greeting", "expected_stage": "welcome"},
+        {"user_input": "我想买电脑", "expected_intent": "product_query", "expected_stage": "category_select"},
+        {"user_input": "苹果", "expected_intent": "product_query", "expected_stage": "series_select"},
+        {"user_input": "MacBook Air", "expected_intent": "product_query", "expected_stage": "config_select"},
+        {"user_input": "1", "expected_intent": "product_query", "expected_stage": "storage_select"},
+        {"user_input": "2", "expected_intent": "product_query", "expected_stage": "color_select"},
+        {"user_input": "1", "expected_intent": "product_query", "expected_stage": "completed"}
+      ]
+    },
+    {
+      "name": "产品切换场景",
+      "description": "用户在选择过程中切换到其他产品",
+      "steps": [
+        {"user_input": "你好", "expected_intent": "greeting"},
+        {"user_input": "我想买电脑", "expected_intent": "product_query"},
+        {"user_input": "苹果", "expected_intent": "product_query"},
+        {"user_input": "还是买手机吧", "expected_intent": "cart_operation", "expected_reset": true},
+        {"user_input": "iPhone 15", "expected_intent": "product_query"}
+      ]
+    },
+    {
+      "name": "餐饮预订流程",
+      "description": "完整的餐饮预订场景",
+      "steps": [
+        {"user_input": "你好", "expected_intent": "greeting"},
+        {"user_input": "我想订餐", "expected_intent": "dining_query"},
+        {"user_input": "海底捞", "expected_intent": "dining_query"},
+        {"user_input": "1", "expected_intent": "dining_query"},
+        {"user_input": "4人", "expected_intent": "dining_query"},
+        {"user_input": "明天晚上", "expected_intent": "dining_query"}
+      ]
+    }
+  ],
+  
+  "error_handling_test_cases": [
+    {
+      "category": "输入验证",
+      "test_cases": [
+        {
+          "name": "无效数字选项",
+          "stage": "config_select",
+          "input": "3",
+          "valid_range": [1, 2],
+          "expected_error": "无效的选项，请输入 1 或 2"
+        },
+        {
+          "name": "超出范围选项",
+          "stage": "series_select", 
+          "input": "6",
+          "valid_range": [1, 2, 3, 4, 5],
+          "expected_error": "无效的选项，请输入 1 到 5"
+        },
+        {
+          "name": "负数输入",
+          "stage": "storage_select",
+          "input": "-1", 
+          "valid_range": [1, 2, 3],
+          "expected_error": "无效的选项，请输入 1 到 3"
+        }
+      ]
+    },
+    {
+      "category": "DSL语法错误",
+      "test_cases": [
+        {
+          "name": "缺少THEN关键字",
+          "dsl_content": "INTENT test: \"测试\"\nRULE bad_rule\nWHEN INTENT_IS test\nRESPOND \"错误\"",
+          "expected_error": "语法错误"
+        },
+        {
+          "name": "未定义意图引用",
+          "dsl_content": "RULE bad_rule\nWHEN INTENT_IS undefined_intent\nTHEN\n    RESPOND \"错误\"",
+          "expected_error": "未定义的意图"
+        }
+      ]
+    }
+  ],
+  
+  "performance_test_cases": [
+    {
+      "name": "DSL解析性能",
+      "description": "测试大型DSL文件的解析性能",
+      "max_duration": 1.0,
+      "iterations": 100
+    },
+    {
+      "name": "意图识别性能", 
+      "description": "测试意图识别的响应时间",
+      "max_duration": 0.1,
+      "iterations": 50
+    },
+    {
+      "name": "并发处理性能",
+      "description": "测试系统在并发情况下的处理能力",
+      "concurrent_users": 10,
+      "requests_per_user": 20
+    }
+  ]
+}

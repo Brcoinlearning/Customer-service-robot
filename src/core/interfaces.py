@@ -1,26 +1,24 @@
 # src/core/interfaces.py
 """
-DSL解释器核心接口定义
+表单系统核心接口定义
 """
 
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
+from dataclasses import dataclass, field
 
-class IDSLParser(ABC):
-    """DSL解析器接口"""
-    
-    @abstractmethod
-    def parse(self, dsl_content: str) -> Dict[str, Any]:
-        """解析DSL脚本内容"""
-        pass
 
-class IInterpreter(ABC):
-    """解释执行器接口"""
-    
-    @abstractmethod
-    def execute(self, detected_intent: str, context: Dict[str, Any] = None) -> List[str]:
-        """根据意图执行相应的规则"""
-        pass
+@dataclass
+class SlotSpec:
+    """槽位规格定义"""
+    name: str
+    required: bool
+    description: str
+    dependencies: List[str] = field(default_factory=list)
+    enums_key: Optional[str] = None
+    semantic_stage: Optional[str] = None
+    allow_llm: bool = True
+
 
 class ILLMClient(ABC):
     """LLM客户端接口"""
@@ -30,18 +28,6 @@ class ILLMClient(ABC):
         """使用LLM检测用户输入的意图，允许可选的上下文信息参与提示词构造"""
         pass
 
-class IContextManager(ABC):
-    """对话上下文管理器接口"""
-    
-    @abstractmethod
-    def get_context(self) -> Dict[str, Any]:
-        """获取当前对话上下文"""
-        pass
-    
-    @abstractmethod
-    def update_context(self, key: str, value: Any):
-        """更新对话上下文"""
-        pass
 
 class IKnowledgeProvider(ABC):
     """知识提供者接口，用于不同业务域的数据与模板输出"""

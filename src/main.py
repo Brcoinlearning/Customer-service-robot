@@ -1,155 +1,147 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+表单模式客服系统入口
+使用表单填充方式进行多槽位信息抽取，支持自然语言输入
+"""
 import os
 import sys
 
-# 添加src目录到Python路径
+# 保证可以从 src 内进行包导入
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from parser.dsl_parser import DSLParser
-from interpreter.interpreter import DSLInterpreter
+from core.form_based_system import FormBasedDialogSystem
+from semantics.option_mapping import SemanticMapper
 from llm.spark_client import SparkLLMClient
 from config.settings import Config
-from core.enhanced_context import EnhancedConversationContext
-from knowledge.product_knowledge import ProductKnowledge
-from knowledge.dining_knowledge import DiningKnowledgeProvider
 
-def load_dsl_script(file_path: str) -> str:
-    """加载DSL脚本文件"""
+
+def choose_business_line() -> str:
+    """选择业务线（使用统一配置系统）"""
+    from knowledge.business_config_loader import business_config_loader
+    
+    print("📋 可用业务线：")
+    businesses = business_config_loader.list_businesses()
+    display_names = business_config_loader.get_business_display_names()
+    
+    if not businesses:
+        print("⚠️ 未找到任何业务配置，使用默认配置")
+        return "apple_store"
+    
+    for i, business in enumerate(businesses, 1):
+        display_name = display_names.get(business, business)
+        print(f"  {i}) {display_name}")
+    
     try:
-        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        full_path = os.path.join(script_dir, file_path)
-        print(f"尝试加载DSL脚本: {full_path}")
-        
-        with open(full_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            print(f"DSL脚本加载成功，内容长度: {len(content)} 字符")
-            return content
-    except FileNotFoundError:
-        print(f"错误: 找不到DSL脚本文件 {full_path}")
-        return ""
+        c = input(f"请输入序号 (1-{len(businesses)})，回车默认[1]: ").strip()
+        if c and c.isdigit():
+            idx = int(c) - 1
+            if 0 <= idx < len(businesses):
+                return businesses[idx]
+    except (ValueError, IndexError):
+        pass
+    
+    return businesses[0] if businesses else "apple_store"
+
+
+def build_llm_client():
+    """构建LLM客户端"""
+    try:
+        client = SparkLLMClient(**Config.get_llm_config())
+        print("✅ LLM客户端初始化成功")
+        return client
     except Exception as e:
-        print(f"加载DSL脚本时发生错误: {e}")
-        return ""
+        print(f"⚠️ LLM 初始化失败，改为不使用 LLM: {e}")
+        print("   这意味着系统只会使用本地关键词匹配，不会有AI智能分析")
+        return None
+
+
+def print_intro(business_line: str = "apple_store"):
+    """根据业务线显示欢迎信息"""
+    from knowledge.business_config_loader import business_config_loader
+    welcome_template = business_config_loader.get_template(business_line, "form_welcome")
+    if welcome_template:
+        print("=" * 50)
+        for line in welcome_template:
+            print(line)
+        print("=" * 50)
+    else:
+        print("=" * 50)
+        print("🍎 智能客服助手 为您服务")
+        print("- 您可以直接说需求，也可以按我的引导一步步选择")
+        print("=" * 50)
+    print("💡 命令: exit 退出 | reset 重新开始")
+
 
 def main():
-    print("=" * 50)
-    print("DSL客服机器人启动中...")
-    print("=" * 50)
-    
-    print("步骤1: 选择并加载DSL脚本...")
-    print("可选脚本:")
-    print("  1) 电商顾问 (ecommerce.dsl)")
-    print("  2) 餐饮预订 (dining.dsl)")
-    choice = input("请输入序号选择脚本，回车使用默认[1]: ").strip()
-    if choice == "2":
-        selected_script_path = "src/scripts/dining.dsl"
-        selected_provider = "dining"
-    else:
-        selected_script_path = Config.DSL_SCRIPT_PATH
-        selected_provider = "product"
-    dsl_content = load_dsl_script(selected_script_path)
-    if not dsl_content:
-        print("❌ DSL脚本加载失败，程序退出")
-        return
-    print("✅ DSL脚本加载成功")
-    
-    # 2. 解析DSL
-    print("步骤2: 正在解析DSL脚本...")
-    parser = DSLParser()
-    try:
-        parsed_dsl = parser.parse(dsl_content)
-        print(f"✅ DSL解析成功: 找到 {len(parsed_dsl['intents'])} 个意图, {len(parsed_dsl['rules'])} 个规则")
-        
-        print("解析到的意图:")
-        for intent_name, description in parsed_dsl['intents'].items():
-            print(f"  - {intent_name}: {description}")
-            
-    except Exception as e:
-        print(f"❌ DSL解析错误: {e}")
-        import traceback
-        traceback.print_exc()
-        return
-    
-    # 3. 初始化解释器、上下文管理器和知识库
-    print("步骤3: 正在初始化解释器...")
-    try:
-        interpreter = DSLInterpreter(parsed_dsl)
-        context_manager = EnhancedConversationContext()
-        context_manager.update_context("user_id", "current_user")
-        if selected_provider == "dining":
-            knowledge = DiningKnowledgeProvider()
-        else:
-            knowledge = ProductKnowledge()
-        print("✅ 解释器和知识库初始化成功")
-    except Exception as e:
-        print(f"❌ 解释器或知识库初始化失败: {e}")
-        return
+    """主程序"""
+    business_line = choose_business_line()
+    print_intro(business_line)
+    form = FormBasedDialogSystem(business_line)
+    semantic_mapper = SemanticMapper()
+    llm_client = build_llm_client()
 
-    # 4. 初始化LLM客户端 - 使用配置类
-    print("步骤4: 正在初始化LLM客户端...")
-    try:
-        llm_client = SparkLLMClient(**Config.get_llm_config())  # 使用配置类
-        print("✅ LLM客户端初始化成功")
-    except Exception as e:
-        print(f"❌ LLM客户端初始化失败: {e}")
-        return
-    
-    print("\n" + "=" * 50)
-    print("🎉 DSL客服机器人启动完成！")
-    print("可用指令:")
-    print("  - 输入任何问题与机器人对话")
-    print("  - 输入 'exit' 退出程序")
-    print("=" * 50)
-    
-    # 5. 主循环
+    # 显示初始提示
+    initial_prompt = form.get_initial_prompt()
+    if initial_prompt:
+        print("\n🤖 客服:")
+        for line in initial_prompt.split("\n"):
+            if line.strip():
+                print(f"  {line}")
+
+        # 显示初始提示（更贴近购物场景）
     while True:
         try:
-            user_input = input("\n👤 用户: ").strip()
-            
-            if user_input.lower() == 'exit':
-                print("再见！")
-                break
-            
-            if not user_input:
+            text = input("\n👤 用户: ").strip()
+            if not text:
                 continue
             
-            # 使用LLM识别意图（携带当前上下文摘要）
-            print("🤖 正在分析意图...", end="")
-            context_for_llm = context_manager.get_context()
-            detected_intent = llm_client.detect_intent(user_input, parsed_dsl['intents'], context_for_llm)
-            print(f" [{detected_intent}]")
-
-            # 更新上下文
-            context_manager.update_context("current_intent", detected_intent)
-            context_manager.add_message("user", user_input)
-
-            # 构造传给解释器的上下文：包含原始上下文、知识库引用、管理器引用和本轮输入
-            ctx = context_manager.get_context()
-            ctx["_manager"] = context_manager
-            ctx["user_input"] = user_input
-            ctx["knowledge"] = knowledge
-
-            # 执行DSL规则 - 传递上下文
-            responses = interpreter.execute(detected_intent, ctx)
-
-            # 输出响应并更新上下文
-            print("🤖 客服:", end="")
-            for i, response in enumerate(responses):
-                if i == 0:
-                    print(f" {response}")
-                else:
-                    print(f"       {response}")
+            low = text.lower()
             
-            # 将机器人响应添加到上下文
-            for response in responses:
-                context_manager.add_message("assistant", response)
-                    
+            # 基本命令
+            if low in {"exit", "quit", "q", "退出"}:
+                print("👋 再见！")
+                break
+            if low in {"reset", "重置", "重新开始"}:
+                form = FormBasedDialogSystem(business_line)
+                print("🌟 好的，我们重新开始挑选～")
+                intro = form.get_initial_prompt()
+                if intro:
+                    print("🤖 客服:")
+                    for line in intro.split("\n"):
+                        if line.strip():
+                            print(f"  {line}")
+                else:
+                    print("🤖 客服: 可以先告诉我您想看电脑、手机还是平板呀～")
+                continue
+
+            # 餐饮业务线仍允许快捷切换，其余在苹果专卖店内部用品类槽位完成
+            if any(k in text for k in ["餐饮", "订位", "预订"]) and business_line != "dining":
+                business_line = "dining"
+                form = FormBasedDialogSystem(business_line)
+                print("🔁 已切换至【餐饮预订】")
+                continue
+
+            # 表单处理
+            result = form.process_input(text, llm_client, semantic_mapper)
+            resp = result.get("response", "")
+            if resp:
+                print("🤖 客服:")
+                for line in resp.split("\n"):
+                    if line.strip():
+                        print(f"  {line}")
+            
+            # 检查是否需要退出（用户在订单确认后选择结束）
+            if result.get("should_exit"):
+                break
+
         except KeyboardInterrupt:
-            print("\n\n程序被用户中断")
+            print("\n👋 用户中断，已退出")
             break
         except Exception as e:
-            print(f"\n❌ 错误: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"❌ 运行时异常: {e}")
+
 
 if __name__ == "__main__":
     main()
+

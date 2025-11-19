@@ -1,0 +1,246 @@
+# apple_store.flow.yaml
+# 苹果商店智能表单流程定义
+# 这是一个基于YAML的声明式DSL脚本，定义了购物流程的所有配置
+# 作者: 胡老师团队
+# 日期: 2024-11-19
+
+flow:
+  name: apple_shopping
+  version: "1.0"
+  description: "苹果产品智能购物流程"
+  business_line: apple_store
+  
+  # ==================== 流程配置 ====================
+  
+  # 槽位填充顺序
+  process_order:
+    - category
+    - brand
+    - series
+    - size
+    - chip
+    - storage
+    - color
+
+  # ==================== 槽位定义 ====================
+  
+  slots:
+    category:
+      label: "产品大类"
+      description: "选择产品类型"
+      required: true
+      allow_llm: false
+      type: enum
+      enums_key: category  # 从JSON加载枚举值
+      dependencies: []
+      prompt_template: form_category_prompt  # 引用JSON模板
+      help: "我们有Mac电脑、iPhone手机和iPad平板三大类产品"
+      
+    brand:
+      label: "品牌选择"
+      description: "品牌选择"
+      required: true
+      allow_llm: false
+      type: enum
+      enums_key: brand
+      dependencies: [category]
+      prompt_template: form_brand_prompt
+      auto_fill: true  # 单选项自动填充
+      
+    series:
+      label: "产品系列"
+      description: "选择具体产品系列"
+      required: true
+      allow_llm: false
+      type: enum
+      enums_key: series
+      semantic_stage: series_selection  # 语义阶段标记
+      dependencies: [brand]
+      prompt_template: form_series_prompt  # 基础模板
+      # 支持条件模板覆盖
+      conditional_prompts:
+        - condition: "category == '电脑'"
+          template: form_series_prompt_computer
+        - condition: "category == '手机'"
+          template: form_series_prompt_phone
+      help: "根据您选择的类别，为您推荐合适的系列"
+      
+    size:
+      label: "尺寸规格"
+      description: "选择屏幕尺寸或设备尺寸"
+      required: true
+      allow_llm: false
+      type: enum
+      enums_key: size
+      dependencies: [series]
+      prompt_template: form_size_prompt
+      help: "不同尺寸适合不同使用场景"
+        
+    chip:
+      label: "处理器芯片"
+      description: "选择处理器型号"
+      required: true
+      allow_llm: true
+      type: enum
+      enums_key: chip
+      semantic_stage: chip_selection
+      dependencies: [category, series, size]
+      prompt_template: form_chip_prompt
+      validation:
+        must_be_valid_enum: true
+        min_confidence: 0.35
+        
+    storage:
+      label: "存储容量"
+      description: "选择存储空间大小"
+      required: true
+      allow_llm: true
+      type: enum
+      enums_key: storage
+      dependencies: [category, chip]
+      prompt_template: form_storage_prompt
+      validation:
+        must_be_valid_enum: true
+        min_confidence: 0.35
+    
+    color:
+      label: "颜色"
+      description: "选择设备颜色"
+      required: true
+      allow_llm: true
+      type: enum
+      enums_key: color
+      dependencies: [category, storage]
+      prompt_template: form_color_prompt
+      validation:
+        must_be_valid_enum: true
+        min_confidence: 0.35
+
+  # ==================== 事件处理 ====================
+      help: "选一个您喜欢的颜色"
+      validation:
+        must_be_valid_enum: true
+        min_confidence: 0.35
+
+  # ==================== 事件处理 ====================
+  
+  events:
+    # 流程开始时
+    on_start:
+      - action: reset_form
+        description: "重置表单状态"
+      - action: auto_fill_single_options
+        description: "自动填充单选项槽位"
+      - action: show_template
+        template: form_welcome
+        description: "显示欢迎信息"
+    
+    # 所有必填槽位填充完成时
+    on_all_filled:
+      - action: show_summary
+        description: "显示订单摘要"
+      - action: show_template
+        template: form_confirmation_options
+        description: "显示确认选项"
+    
+    # 用户确认订单时
+    on_confirm:
+      - action: validate_form
+        description: "验证表单数据"
+      - action: submit_order
+        description: "提交订单"
+      - action: show_template
+        template: form_order_confirmed
+        description: "显示确认成功"
+      - action: show_template
+        template: form_order_thanks
+        description: "感谢购买"
+      - action: ask_continue
+        description: "询问是否继续购物"
+    
+    # 重新开始时
+    on_restart:
+      - action: reset_form
+        description: "重置表单"
+      - action: show_template
+        template: form_welcome
+        description: "显示欢迎信息"
+
+  # ==================== 用户命令映射 ====================
+  
+  commands:
+    # 重选命令
+    reselect:
+      keywords: ["重选", "修改", "change", "重新选择"]
+      description: "重新选择某个槽位的值"
+      action: enter_reselect_mode
+      available_when: any_slot_filled
+      
+    # 重新开始命令
+    restart:
+      keywords: ["重新开始", "重置", "reset", "再来一次"]
+      description: "清空所有选择，重新开始"
+      action: restart_flow
+      available_when: always
+      
+    # 确认订单命令
+    confirm:
+      keywords: ["确认", "下单", "ok", "yes", "好的", "1"]
+      description: "确认当前订单"
+      condition: all_slots_filled
+      action: confirm_order
+      
+    # 查看订单命令
+    show_order:
+      keywords: ["看看", "查看", "show", "订单"]
+      description: "查看当前订单摘要"
+      condition: any_slot_filled
+      action: show_summary
+      
+    # 取消命令
+    cancel:
+      keywords: ["取消", "不要", "cancel", "算了"]
+      description: "取消当前操作"
+      action: cancel_current_action
+      
+    # 帮助命令
+    help:
+      keywords: ["帮助", "help", "?", "怎么用"]
+      description: "显示使用帮助"
+      action: show_help
+      response: |
+        📖 使用帮助：
+        
+        • 按照提示选择产品配置
+        • 可以直接说名称，也可以输入数字
+        • 随时说"重选"可以修改之前的选择
+        • 说"重新开始"可以清空重来
+        • 说"查看"可以看当前订单
+        • 说"帮助"查看本说明
+        
+        有任何问题随时告诉我！
+
+  # ==================== 验证规则（可选）====================
+  
+  validations:
+    # 示例：芯片和存储容量的兼容性检查
+    - name: chip_storage_compatibility
+      description: "检查芯片和存储容量的兼容性"
+      enabled: false  # 当前禁用，可根据需要启用
+      when:
+        slots_filled: [chip, storage]
+      rules:
+        - condition: "chip == 'A17 Pro' and storage == '2TB'"
+          valid: false
+          message: "A17 Pro芯片不支持2TB存储容量"
+
+  # ==================== 响应模板（可选）====================
+  
+  templates:
+    # 这些模板会覆盖business_config中的默认模板
+    custom_welcome:
+      enabled: false
+      content:
+        - "🌟 欢迎来到苹果专卖店"
+        - "我是AI助手小A，很高兴为您服务"
+        - "让我们一起挑选心仪的苹果产品吧～"
