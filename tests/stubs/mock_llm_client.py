@@ -175,6 +175,42 @@ class MockLLMClient(ILLMClient):
     def clear_custom_responses(self):
         """清空自定义响应"""
         self.custom_responses = {}
+    
+    def extract_slots(
+        self,
+        user_input: str,
+        business_line: str,
+        target_slots: List[str],
+        current_values: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        模拟槽位抽取
+        
+        Args:
+            user_input: 用户输入文本
+            business_line: 业务线名称
+            target_slots: 目标槽位列表
+            current_values: 当前已填充的槽位值
+        
+        Returns:
+            抽取结果字典 {槽位名: {"value": 值, "confidence": 置信度, "reason": 原因}}
+        """
+        # 记录调用历史
+        self.call_history.append({
+            'method': 'extract_slots',
+            'user_input': user_input,
+            'business_line': business_line,
+            'target_slots': target_slots,
+            'current_values': current_values
+        })
+        
+        # 模拟API失败
+        if self.fail_mode:
+            raise Exception("Mock LLM API failure")
+        
+        # Mock客户端默认返回空字典，让其他层处理
+        # 实际测试中可以通过custom_responses配置特定返回值
+        return {}
 
 
 class ConfigurableMockLLMClient(MockLLMClient):

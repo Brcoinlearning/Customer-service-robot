@@ -1,0 +1,244 @@
+{
+  "edge_case_test_data": {
+    "empty_inputs": [
+      "",
+      " ",
+      "\n",
+      "\t",
+      "   \n\t   "
+    ],
+    "unicode_inputs": [
+      "你好世界🌍",
+      "Здравствуй мир",
+      "مرحبا بالعالم",
+      "🎉🚀💻🔥",
+      "Test\u0000null",
+      "Test\u200B‍zero‍width"
+    ],
+    "large_inputs": [
+      "A" * 1000,
+      "测试" * 500,
+      "🎉" * 100
+    ],
+    "boundary_numbers": [
+      "-1",
+      "0", 
+      "1",
+      "999",
+      "1000",
+      "2147483647",  
+      "2147483648",
+      "-2147483648",
+      "3.14159",
+      "1e10",
+      "NaN",
+      "Infinity"
+    ],
+    "special_formats": [
+      "JSON: {\"key\": \"value\"}",
+      "XML: <root><item>test</item></root>",
+      "URL: https://example.com/path?param=value",
+      "Email: test@example.com",
+      "Phone: +86-138-1234-5678"
+    ]
+  },
+  
+  "stress_test_scenarios": [
+    {
+      "name": "高频意图切换",
+      "description": "用户快速切换不同意图",
+      "steps": [
+        {"input": "你好", "expected_intent": "greeting"},
+        {"input": "我想买电脑", "expected_intent": "product_query"},
+        {"input": "订单状态", "expected_intent": "order_status"}, 
+        {"input": "退货", "expected_intent": "return_request"},
+        {"input": "你好", "expected_intent": "greeting"},
+        {"input": "我想买电脑", "expected_intent": "product_query"}
+      ]
+    },
+    {
+      "name": "深层嵌套对话",
+      "description": "模拟复杂的多轮对话场景", 
+      "steps": [
+        {"input": "你好", "context": {"depth": 1}},
+        {"input": "我想买电脑", "context": {"depth": 2, "category": "electronics"}},
+        {"input": "苹果的", "context": {"depth": 3, "category": "electronics", "brand": "apple"}},
+        {"input": "MacBook Pro", "context": {"depth": 4, "category": "electronics", "brand": "apple", "series": "macbook_pro"}},
+        {"input": "16寸的", "context": {"depth": 5, "size": "16_inch"}},
+        {"input": "1TB存储", "context": {"depth": 6, "storage": "1tb"}},
+        {"input": "银色", "context": {"depth": 7, "color": "silver"}}
+      ]
+    },
+    {
+      "name": "异常恢复测试",
+      "description": "测试系统从各种异常中恢复的能力",
+      "scenarios": [
+        {
+          "type": "网络超时",
+          "trigger": "api_timeout",
+          "expected_behavior": "fallback_to_keywords"
+        },
+        {
+          "type": "内存不足", 
+          "trigger": "memory_exhaustion",
+          "expected_behavior": "graceful_degradation"
+        },
+        {
+          "type": "配置文件损坏",
+          "trigger": "config_corruption", 
+          "expected_behavior": "use_defaults"
+        }
+      ]
+    }
+  ],
+
+  "multilingual_test_data": {
+    "chinese_variants": [
+      {"input": "你好", "variant": "simplified", "expected": "greeting"},
+      {"input": "您好", "variant": "formal", "expected": "greeting"}, 
+      {"input": "喂", "variant": "informal", "expected": "greeting"},
+      {"input": "早上好", "variant": "time_specific", "expected": "greeting"}
+    ],
+    "english_variants": [
+      {"input": "hello", "variant": "standard", "expected": "greeting"},
+      {"input": "hi", "variant": "casual", "expected": "greeting"},
+      {"input": "good morning", "variant": "formal", "expected": "greeting"},
+      {"input": "hey", "variant": "very_casual", "expected": "greeting"}
+    ],
+    "mixed_language": [
+      {"input": "hello 你好", "expected": "greeting"},
+      {"input": "我想买computer", "expected": "product_query"},
+      {"input": "MacBook怎么样", "expected": "product_query"}
+    ]
+  },
+
+  "business_scenario_variations": {
+    "ecommerce_advanced": [
+      {
+        "name": "批量购买场景",
+        "steps": [
+          {"input": "我要批量采购", "intent": "bulk_purchase"},
+          {"input": "需要10台MacBook", "intent": "quantity_specification"},
+          {"input": "能否打折", "intent": "discount_inquiry"},
+          {"input": "什么时候发货", "intent": "delivery_inquiry"}
+        ]
+      },
+      {
+        "name": "售后服务场景", 
+        "steps": [
+          {"input": "我的MacBook有问题", "intent": "technical_support"},
+          {"input": "屏幕花屏", "intent": "problem_description"},
+          {"input": "还在保修期内", "intent": "warranty_inquiry"},
+          {"input": "怎么维修", "intent": "repair_process"}
+        ]
+      }
+    ],
+    "dining_advanced": [
+      {
+        "name": "团体聚餐预订",
+        "steps": [
+          {"input": "我要订包间", "intent": "private_room_booking"},
+          {"input": "20个人", "intent": "group_size"},
+          {"input": "下周五晚上", "intent": "time_specification"},
+          {"input": "需要投影设备", "intent": "special_requirements"}
+        ]
+      }
+    ]
+  },
+
+  "error_simulation_data": {
+    "network_errors": [
+      {"type": "connection_timeout", "duration": 30, "retry_count": 3},
+      {"type": "dns_resolution_failure", "error_code": "NXDOMAIN"},
+      {"type": "http_500", "error_message": "Internal Server Error"},
+      {"type": "rate_limiting", "error_code": 429, "retry_after": 60}
+    ],
+    "system_errors": [
+      {"type": "out_of_memory", "available_memory": "10MB"},
+      {"type": "disk_full", "available_space": "0MB"}, 
+      {"type": "permission_denied", "resource": "/tmp/test_file"},
+      {"type": "file_corruption", "file": "config.json", "corruption_type": "truncated"}
+    ],
+    "data_corruption": [
+      {"type": "json_malformed", "content": "{\"key\": value}"},  
+      {"type": "encoding_issue", "content": "caf\xe9"},
+      {"type": "null_bytes", "content": "test\x00data"},
+      {"type": "control_chars", "content": "test\x01\x02\x03"}
+    ]
+  },
+
+  "performance_benchmarks": {
+    "response_time_targets": {
+      "dsl_parsing": {"target": "< 100ms", "max_acceptable": "500ms"},
+      "intent_recognition": {"target": "< 200ms", "max_acceptable": "1000ms"}, 
+      "rule_execution": {"target": "< 50ms", "max_acceptable": "200ms"},
+      "end_to_end": {"target": "< 500ms", "max_acceptable": "2000ms"}
+    },
+    "throughput_targets": {
+      "concurrent_users": {"target": "> 100", "min_acceptable": "50"},
+      "requests_per_second": {"target": "> 1000", "min_acceptable": "500"},
+      "memory_usage": {"target": "< 100MB", "max_acceptable": "500MB"}
+    },
+    "load_test_profiles": [
+      {
+        "name": "normal_load",
+        "users": 10,
+        "requests_per_user": 100,
+        "ramp_up_time": "1min"
+      },
+      {
+        "name": "peak_load", 
+        "users": 50,
+        "requests_per_user": 200,
+        "ramp_up_time": "5min"
+      },
+      {
+        "name": "stress_test",
+        "users": 200,
+        "requests_per_user": 500, 
+        "ramp_up_time": "10min"
+      }
+    ]
+  },
+
+  "integration_test_scenarios": {
+    "api_integration": [
+      {
+        "name": "LLM服务集成",
+        "endpoint": "spark_api",
+        "test_cases": [
+          {"input": "正常请求", "expected_status": 200},
+          {"input": "超长请求", "expected_status": 400},
+          {"input": "无效格式", "expected_status": 400},
+          {"input": "认证失败", "expected_status": 401}
+        ]
+      }
+    ],
+    "database_integration": [
+      {
+        "name": "配置数据库",
+        "operations": ["CREATE", "READ", "UPDATE", "DELETE"],
+        "test_scenarios": [
+          {"operation": "CREATE", "data": "valid_config", "expected": "success"},
+          {"operation": "CREATE", "data": "duplicate_key", "expected": "error"},
+          {"operation": "READ", "query": "existing_key", "expected": "data_returned"},
+          {"operation": "READ", "query": "non_existing_key", "expected": "not_found"}
+        ]
+      }
+    ]
+  },
+
+  "accessibility_test_data": {
+    "screen_reader_compatibility": [
+      {"element": "response_text", "aria_label": "系统响应", "role": "region"},
+      {"element": "input_field", "aria_label": "用户输入", "role": "textbox"},
+      {"element": "intent_display", "aria_label": "识别意图", "role": "status"}
+    ],
+    "keyboard_navigation": [
+      {"action": "tab", "expected": "focus_next_element"},
+      {"action": "shift+tab", "expected": "focus_previous_element"},
+      {"action": "enter", "expected": "submit_input"},
+      {"action": "escape", "expected": "clear_input"}
+    ]
+  }
+}

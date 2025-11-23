@@ -1,0 +1,113 @@
+{
+  "environments": {
+    "test": {
+      "timeout": 300,
+      "coverage_threshold": 80,
+      "parallel_jobs": 1,
+      "fail_fast": true,
+      "max_retries": 2,
+      "test_data_size": "small"
+    },
+    "staging": {
+      "timeout": 600,
+      "coverage_threshold": 85,
+      "parallel_jobs": 2,
+      "fail_fast": false,
+      "max_retries": 3,
+      "test_data_size": "medium"
+    },
+    "production": {
+      "timeout": 1200,
+      "coverage_threshold": 90,
+      "parallel_jobs": 4,
+      "fail_fast": false,
+      "max_retries": 5,
+      "test_data_size": "large"
+    }
+  },
+  
+  "test_suites": {
+    "unit_tests": {
+      "enabled": true,
+      "timeout": 300,
+      "priority": 1,
+      "dependencies": []
+    },
+    "integration_tests": {
+      "enabled": true,
+      "timeout": 600,
+      "priority": 2,
+      "dependencies": ["unit_tests"]
+    },
+    "security_tests": {
+      "enabled": true,
+      "timeout": 300,
+      "priority": 3,
+      "dependencies": []
+    },
+    "performance_tests": {
+      "enabled": true,
+      "timeout": 900,
+      "priority": 4,
+      "dependencies": ["unit_tests", "integration_tests"]
+    },
+    "e2e_tests": {
+      "enabled": false,
+      "timeout": 1200,
+      "priority": 5,
+      "dependencies": ["integration_tests"]
+    }
+  },
+  
+  "notifications": {
+    "slack_webhook": "",
+    "email_recipients": [],
+    "failure_only": true,
+    "include_logs": false,
+    "max_log_lines": 50
+  },
+  
+  "reporting": {
+    "formats": ["junit", "json", "html"],
+    "output_directory": "test_reports/ci",
+    "archive_reports": true,
+    "max_archived_reports": 10
+  },
+  
+  "quality_gates": {
+    "coverage_threshold": 85,
+    "max_test_duration": 1800,
+    "max_failure_rate": 0.05,
+    "performance_regression_threshold": 0.1
+  },
+  
+  "external_services": {
+    "spark_api": {
+      "mock_enabled": true,
+      "timeout": 30,
+      "retry_count": 3
+    },
+    "database": {
+      "mock_enabled": true,
+      "connection_timeout": 10
+    }
+  },
+  
+  "test_data": {
+    "small": {
+      "max_dsl_size": 100,
+      "max_test_cases": 50,
+      "concurrent_users": 5
+    },
+    "medium": {
+      "max_dsl_size": 500,
+      "max_test_cases": 200,
+      "concurrent_users": 20
+    },
+    "large": {
+      "max_dsl_size": 2000,
+      "max_test_cases": 1000,
+      "concurrent_users": 100
+    }
+  }
+}

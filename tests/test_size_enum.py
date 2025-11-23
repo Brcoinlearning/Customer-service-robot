@@ -6,7 +6,7 @@ from semantics.option_mapping import SemanticMapper
 
 
 def test_size_numeric_selection():
-    form = FormBasedDialogSystem('apple_computer')
+    form = FormBasedDialogSystem('apple_store')
     llm = None
     semantic = SemanticMapper()
     # 模拟已提示尺寸槽位
@@ -17,7 +17,7 @@ def test_size_numeric_selection():
 
 
 def test_size_unique_text_match():
-    form = FormBasedDialogSystem('apple_computer')
+    form = FormBasedDialogSystem('apple_store')
     llm = None
     semantic = SemanticMapper()
     form.last_prompted_slot = 'size'

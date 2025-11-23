@@ -148,8 +148,8 @@ class SparkLLMClient(ILLMClient):  # 已正确实现接口
             content = data['choices'][0]['message']['content']
             # 显示完整回复用于调试
             if len(content) > 200:
-                print(f"🤖 LLM原始回复（截取前200字）: {content[:200]}...")
-                print(f"📏 完整回复长度: {len(content)} 字符")
+                """print(f"🤖 LLM原始回复（截取前200字）: {content[:200]}...")"""
+                print(f"📏 LLM完整回复长度: {len(content)} 字符")
             else:
                 print(f"🤖 LLM原始回复: {content}")
             return content
@@ -268,7 +268,7 @@ class SparkLLMClient(ILLMClient):  # 已正确实现接口
 输入: "{user_input}"
 
 要求：
-1. 值必须精确匹配标准选项中的具体值（如"MacBook Pro"、"M3"）
+1. 值必须精确匹配标准选项中的具体值
 2. 严禁返回槽位描述本身（如"处理器芯片"、"存储容量"等）
 3. 无法识别时value设为空字符串""
 4. 可推断相关槽位（如"MacBook"可推断category/brand）

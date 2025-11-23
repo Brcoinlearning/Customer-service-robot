@@ -51,11 +51,11 @@ flow:
       label: "产品系列"
       description: "选择具体产品系列"
       required: true
-      allow_llm: false
+      allow_llm: true
       type: enum
       enums_key: series
       semantic_stage: series_selection  # 语义阶段标记
-      dependencies: [brand]
+      dependencies: [category,brand]
       prompt_template: form_series_prompt  # 基础模板
       # 支持条件模板覆盖
       conditional_prompts:
@@ -69,7 +69,7 @@ flow:
       label: "尺寸规格"
       description: "选择屏幕尺寸或设备尺寸"
       required: true
-      allow_llm: false
+      allow_llm: true
       type: enum
       enums_key: size
       dependencies: [series]
@@ -110,7 +110,7 @@ flow:
       allow_llm: true
       type: enum
       enums_key: color
-      dependencies: [category, storage]
+      dependencies: []
       prompt_template: form_color_prompt
       validation:
         must_be_valid_enum: true

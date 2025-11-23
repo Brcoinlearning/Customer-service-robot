@@ -733,6 +733,15 @@ class FormBasedDialogSystem:
         - "轻办公" → 推荐M3标准版, 512GB存储
         - "随身携带" → 推荐13寸
         """
+        # 新增：检查槽位依赖是否满足
+        slot_def = self.form_template.get(slot_name)
+        if slot_def and slot_def.dependencies:
+            for dep_name in slot_def.dependencies:
+                dep_slot = self.current_form.get(dep_name)
+                if not dep_slot or dep_slot.status != SlotStatus.FILLED:
+                    # 依赖未满足，不进行意图推荐
+                    return None
+                
         text_lower = user_input.lower()
         
         # 获取槽位定义
@@ -775,8 +784,26 @@ class FormBasedDialogSystem:
             print("🤖 LLM客户端未初始化，跳过AI分析")
             return {}
         
+        # 过滤掉依赖未满足的槽位
+        valid_target_slots = []
+        for slot_name in target_slots:
+            slot_def = self.form_template.get(slot_name)
+            if slot_def and slot_def.dependencies:
+                dependencies_met = all(
+                    self.current_form.get(dep) and 
+                    self.current_form[dep].status == SlotStatus.FILLED
+                    for dep in slot_def.dependencies
+                )
+                if not dependencies_met:
+                    continue  # 跳过依赖未满足的槽位
+            valid_target_slots.append(slot_name)
+        
+        if not valid_target_slots:
+            return {}
+        
         # 只向 LLM 请求 allow_llm=true 的槽位
-        llm_allowed_slots = [s for s in target_slots if self.form_template.get(s) and self.form_template[s].allow_llm]
+        llm_allowed_slots = [s for s in valid_target_slots if self.form_template.get(s) and self.form_template[s].allow_llm]
+        # 只向 LLM 请求 allow_llm=true 的槽位
         if not llm_allowed_slots:
             return {}
         
@@ -834,10 +861,14 @@ class FormBasedDialogSystem:
         return converted
     
     def _update_slot(self, slot_name: str, new_value: SlotValue) -> Dict[str, bool]:
-        """更新槽位值，处理冲突 - 通用冲突检测机制"""
+        """更新槽位值，处理冲突 - 同时清除相关验证错误"""
         slot = self.current_form[slot_name]
         result = {"updated": False, "filled": False, "conflict": False}
         
+        # 新增：在更新槽位时清除相关的验证错误
+        if slot_name in ["chip", "storage", "size", "series"]:  # 与验证相关的槽位
+            self.validation_errors = []  # 清除所有验证错误
+            print(f"🔄 已清除验证错误（更新了 {slot_name}）")
         if slot.status == SlotStatus.EMPTY:
             # 空槽位直接填充
             slot.value = new_value
@@ -874,6 +905,28 @@ class FormBasedDialogSystem:
         # 如果值相同，不冲突
         if existing_value.value == new_value.value:
             return False
+        
+        # 用户明确选择保护：如果现有值是用户明确选择的，AI不能覆盖
+        user_explicit_sources = {
+            "numeric",      # 数字选择
+            "direct",       # 直接关键词匹配
+            "single_match", # 唯一匹配
+            "semantic",     # 语义映射
+            "intent_recommend"  # 意图推荐（用户接受了推荐）
+        }
+        
+        ai_sources = {
+            "llm",          # 单个LLM识别
+            "multi_llm"     # 多槽位LLM识别
+        }
+        
+        # 保护原则：用户明确选择不能被AI覆盖
+        if (existing_value.source in user_explicit_sources and 
+            new_value.source in ai_sources):
+            print(f"🛡️ 保护用户明确选择: {existing_value.value}({existing_value.source}) "
+                f"不被AI识别覆盖: {new_value.value}({new_value.source})")
+            return False
+        
             
         # 冲突触发策略：
         # 1. 高置信度的新值与现有值不同
@@ -1272,11 +1325,15 @@ class FormBasedDialogSystem:
         return "\n".join(options_lines)
     
     def _clear_slot_and_dependencies(self, slot_name: str):
-        """清空指定槽位及其所有下游依赖槽位"""
+        """清空指定槽位及其所有下游依赖槽位 - 同时清除验证错误"""
         # 清空当前槽位
         self.current_form[slot_name].status = SlotStatus.EMPTY
         self.current_form[slot_name].value = None
         self.current_form[slot_name].candidates = []
+        
+        # 新增：清除验证错误
+        self.validation_errors = []
+        print(f"🔄 已清除验证错误（重选了 {slot_name}）")
         
         # 找出所有依赖于当前槽位的下游槽位并清空
         def clear_dependents(current_slot):
@@ -1382,7 +1439,8 @@ class FormBasedDialogSystem:
             "semantic": "(语义) ",
             "llm": "(LLM) ",
             "multi_llm": "(LLM) ",
-            "auto_single": "(自动) "
+            "auto_single": "(自动) ",
+            "intent_recommend": "(推荐) "
         }
         return source_prefixes.get(source, "(未知) ")
     
@@ -1394,6 +1452,7 @@ class FormBasedDialogSystem:
             "semantic": "语义智能映射", 
             "llm": "AI智能分析",
             "multi_llm": "AI多维度识别",
-            "single_match": "唯一关键词匹配"
+            "single_match": "唯一关键词匹配",
+            "intent_recommend": "智能意图推荐" 
         }
         return descriptions.get(source, "未知识别方式")
