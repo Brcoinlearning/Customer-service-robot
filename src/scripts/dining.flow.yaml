@@ -12,7 +12,7 @@ flow:
     - series
     - party_size
     - date
-    - budget    # 确保包含预算
+    - budget    
     - contact
     
   slots:
@@ -70,7 +70,7 @@ flow:
     budget:
       label: "人均预算"
       description: "预计消费预算"
-      required: false
+      required: true
       allow_llm: true
       type: text
       dependencies: [date]

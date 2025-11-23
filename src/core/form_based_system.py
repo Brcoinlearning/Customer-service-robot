@@ -555,7 +555,8 @@ class FormBasedDialogSystem:
             
             # 获取该槽位对应的枚举key
             enum_key = slot_def.enums_key if slot_def.enums_key else slot_name
-            enum_list = enums.get(enum_key, [])
+            # 如果当前 category 是“手机”，这里就只返回 iPhone 系列，不含 MacBook
+            enum_list = self._get_filtered_options(enum_key)
             
             if not isinstance(enum_list, list):
                 continue
@@ -591,17 +592,8 @@ class FormBasedDialogSystem:
                             best_match_length = len(alias_lower)
                 
                 if matched:
-                    # 特殊处理：避免 "pro"/"air" 在series槽位的误匹配
-                    # 如果是系列名且关键词是短词，要求更严格的匹配
-                    if slot_name == "series" and matched_keyword and matched_keyword.lower() in ["pro", "air"]:
-                        # 要求完整系列名匹配（如 "macbook pro" 或 "ipad pro"）
-                        full_series_matched = False
-                        for alias in aliases:
-                            if len(alias.split()) > 1 and alias.lower() in text_lower:
-                                full_series_matched = True
-                                break
-                        if not full_series_matched:
-                            continue
+                    # 因为有了 _get_filtered_options 的上下文保护，
+                    # 我们不再需要担心 "pro" 会误匹配到错误的品类。
                     
                     # 计算匹配置信度（所有扫描的都是缺失槽位）
                     confidence = 0.95  # 高置信度，因为是精确别名匹配
@@ -657,7 +649,7 @@ class FormBasedDialogSystem:
         返回规范化后的值，如果无效则返回None
         """
         # 获取枚举选项
-        options = get_slot_options(enum_key, self.business_line)
+        options = self._get_filtered_options(enum_key)
         if not options:
             # 没有枚举定义，接受任何值
             return value
