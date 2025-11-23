@@ -725,15 +725,8 @@ class FormBasedDialogSystem:
         )
     
     def _intent_based_recommendation(self, user_input: str, slot_name: str) -> Optional[SlotValue]:
-        """基于用户意图的智能推荐（从配置文件加载）
-        
-        识别用户的使用场景和需求，推荐最合适的配置选项
-        例如：
-        - "做视频剪辑" → 推荐M3 Pro/Max, 1TB+存储
-        - "轻办公" → 推荐M3标准版, 512GB存储
-        - "随身携带" → 推荐13寸
-        """
-        # 新增：检查槽位依赖是否满足
+        """基于用户意图的智能推荐（支持动态标签解析）"""
+        # 1. 检查槽位依赖是否满足
         slot_def = self.form_template.get(slot_name)
         if slot_def and slot_def.dependencies:
             for dep_name in slot_def.dependencies:
@@ -745,7 +738,6 @@ class FormBasedDialogSystem:
         text_lower = user_input.lower()
         
         # 获取槽位定义
-        slot_def = self.form_template.get(slot_name)
         if not slot_def or not slot_def.enums_key:
             return None
         
@@ -762,6 +754,15 @@ class FormBasedDialogSystem:
             for keyword in keywords:
                 if keyword in text_lower:
                     recommended = intent_config.get("recommend")
+                    
+                    # 处理动态推荐值 (如 $MIN, $MAX)
+                    # 只有当推荐值是字符串且以 $ 开头时才触发解析
+                    if isinstance(recommended, str) and recommended.startswith("$"):
+                        recommended = self._resolve_dynamic_recommendation(slot_name, recommended)
+                        # 如果解析失败（例如没找到对应系列的尺寸），则跳过该规则
+                        if not recommended:
+                            continue 
+
                     confidence = intent_config.get("confidence", 0.7)
                     reason = intent_config.get("reason", "意图推荐")
                     
@@ -774,6 +775,40 @@ class FormBasedDialogSystem:
                             reason=reason
                         )
         
+        return None
+
+    def _resolve_dynamic_recommendation(self, slot_name: str, dynamic_tag: str) -> Optional[str]:
+        """
+        解析动态推荐标签 (如 $MIN, $MAX)
+        目前主要用于 size 槽位，根据当前选定的 series 查找 min/max 尺寸
+        """
+        # 目前仅支持 size 槽位的动态解析
+        if slot_name != "size":
+            return None
+            
+        # 获取当前已选系列 (series)
+        # 注意：这依赖于 series 槽位必须先被填充（依赖检查已在主方法中保证）
+        series_slot = self.current_form.get("series")
+        if not series_slot or not series_slot.value:
+            return None
+        
+        current_series = series_slot.value.value
+        
+        # 获取该系列的尺寸过滤器配置 (来自 apple_store.json 的 filters.size_by_series)
+        size_filters = self.business_filters.get("size_by_series", {})
+        available_sizes = size_filters.get(current_series, [])
+        
+        if not available_sizes:
+            return None
+            
+        # 解析逻辑：假设配置列表是有序的（通常 json 里都是从小到大排）
+        # 例如: "MacBook Air": ["13寸", "15寸"] -> $MIN=13寸, $MAX=15寸
+        #       "MacBook Pro": ["14寸", "16寸"] -> $MIN=14寸, $MAX=16寸
+        if dynamic_tag == "$MIN":
+            return available_sizes[0]  # 取第一个
+        elif dynamic_tag == "$MAX":
+            return available_sizes[-1] # 取最后一个
+            
         return None
     
     def _llm_slot_extraction(self, user_input: str, target_slots: List[str], llm_client) -> Dict[str, SlotValue]:

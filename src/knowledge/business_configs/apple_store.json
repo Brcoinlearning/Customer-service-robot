@@ -195,15 +195,15 @@
     "size": [
       {
         "intent": "便携需求",
-        "keywords": ["便携", "轻便", "随身", "携带", "移动", "出差","小巧"],
-        "recommend": "13寸",
+        "keywords": ["便携", "轻便", "随身", "携带", "移动", "出差", "小巧", "小一点"],
+        "recommend": "$MIN",
         "confidence": 0.75,
         "reason": "检测到便携性需求"
       },
       {
         "intent": "大屏需求",
-        "keywords": ["大屏", "视野", "舒适", "看得清"],
-        "recommend": "16寸",
+        "keywords": ["大屏", "视野", "舒适", "看得清", "大一点", "最大"],
+        "recommend": "$MAX",
         "confidence": 0.75,
         "reason": "检测到大屏幕需求"
       }

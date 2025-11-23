@@ -85,20 +85,21 @@ def test_intent_recommendation_from_config():
         assert "512" in storage_slot2.value.value
     
     # ---------------------------------------------------------
-    # 测试3: "便携" → 13寸
+    # 测试3: "便携" → 动态推荐 ($MIN)
     # ---------------------------------------------------------
     print("\n测试3: 输入'便携'")
     form3 = FormBasedDialogSystem('apple_store')
     form3.process_input('电脑', llm, semantic_mapper)
-    form3.process_input('MacBook Pro', llm, semantic_mapper)
     
-    # 这里直接推荐 size，不需要前置依赖
+    # Case A: MacBook Pro -> 应该推荐 14寸
+    form3.process_input('MacBook Pro', llm, semantic_mapper)
     form3.process_input('便携', llm, semantic_mapper)
     
     size_slot3 = form3.current_form.get('size')
     if size_slot3 and size_slot3.status == SlotStatus.FILLED:
-        print(f"  ✅ size推荐: {size_slot3.value.value}")
-        assert "13" in size_slot3.value.value
+        print(f"  ✅ size推荐(Pro): {size_slot3.value.value}")
+        # [修改] 断言改为 14寸
+        assert "14" in size_slot3.value.value
         assert size_slot3.value.source == 'intent_recommend'
     
     print("\n✅ 所有意图推荐测试通过！")
