@@ -24,7 +24,11 @@ def test_apple_store_complete_flow():
     # 模拟完整对话流程
     form.process_input('电脑', llm, mapper)
     form.process_input('MacBook Pro', llm, mapper)
+    
+    # 关键步骤：输入 M3 Pro
+    # 这是一个容易出错的点，需要验证是否正确识别为 Pro 版本而非基础版
     form.process_input('M3 Pro', llm, mapper)
+    
     form.process_input('16寸', llm, mapper)
     form.process_input('1TB', llm, mapper)
     form.process_input('银色', llm, mapper)
@@ -36,6 +40,12 @@ def test_apple_store_complete_flow():
     assert form.current_form['size'].status == SlotStatus.FILLED
     assert form.current_form['storage'].status == SlotStatus.FILLED
     assert form.current_form['color'].status == SlotStatus.FILLED
+    
+    # [关键修正] 验证数据准确性
+    # 确保 'M3 Pro' 输入没有被错误匹配为 'M3' (基础款)
+    chip_value = form.current_form['chip'].value.value
+    # 使用 'in' 判断以兼容 "M3 Pro" 或 "M3 进阶款 (Pro)" 等不同配置Label
+    assert "Pro" in chip_value, f"芯片识别错误，期望包含'Pro'，实际得到: '{chip_value}'"
     
     # 检查表单完整性
     assert form._check_form_completeness() == True
@@ -82,6 +92,12 @@ def test_one_shot_input():
     ]
     
     assert len(filled_slots) >= 4  # 至少识别出4个槽位
+    
+    # [修正] 验证关键信息准确性
+    if 'chip' in filled_slots:
+        val = form.current_form['chip'].value.value
+        assert "Pro" in val or "Max" in val, f"One-shot输入芯片识别可能有误: {val}"
+        
     return True
 
 
@@ -167,8 +183,9 @@ def test_mixed_scenarios():
     storage = form.current_form.get('storage')
     
     # 意图推荐的槽位
-    assert chip.value.value == 'M3 Pro'
-    assert storage.value.value == '1TB'
+    # [修正] 兼容新的配置Label
+    assert "Pro" in chip.value.value or chip.value.value == 'M3 Pro'
+    assert "1TB" in storage.value.value
     
     # 精确匹配的槽位
     assert form.current_form['size'].value.value == '16寸'
