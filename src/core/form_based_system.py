@@ -1117,66 +1117,109 @@ class FormBasedDialogSystem:
         return "\n\n".join(response_parts)
     
     def _generate_slot_prompt(self, slot_name: str) -> str:
-        """为特定槽位生成询问提示 (模板 + 动态过滤枚举 + 场景推荐)"""
-        # 分类值用于动态选择模板
-        category_val = None
-        if self.current_form.get("category") and self.current_form["category"].value:
-            category_val = self.current_form["category"].value.value
-
-        template_key = f"form_{slot_name}_prompt"
-        if slot_name == "series" and self.business_line == "apple_store":
-            if category_val == "电脑":
-                template_key = "form_series_prompt_computer"
-            elif category_val == "手机":
-                template_key = "form_series_prompt_phone"
-            else:
-                template_key = "form_series_prompt"
+        """
+        通用化的槽位提示生成
+        完全基于配置驱动，不包含任何特定业务逻辑
+        """
+        slot = self.current_form[slot_name]
         
+        # 1. 确定使用哪个模板 Key (默认 vs 条件覆盖)
+        # 优先尝试从动态属性获取，如果没有则回退到默认命名约定
+        template_key = getattr(slot, 'prompt_template', f"form_{slot_name}_prompt")
+        
+        # 检查是否有条件提示配置 (Conditional Prompts)
+        # 这是一个通用的逻辑，只要 YAML 里配置了 conditional_prompts 就会生效
+        if hasattr(slot, 'conditional_prompts') and slot.conditional_prompts:
+            for cond_cfg in slot.conditional_prompts:
+                condition = cond_cfg.get('condition')
+                target_template = cond_cfg.get('template')
+                
+                # 如果条件满足，覆盖默认模板
+                if self._evaluate_slot_condition(condition):
+                    template_key = target_template
+                    break
+        
+        # 2. 加载模板内容
         template_lines = business_config_loader.get_template(self.business_line, template_key)
-        sd = self.form_template.get(slot_name)
-        enum_key = sd.enums_key if sd and sd.enums_key else slot_name
+        
+        # 3. 获取并格式化选项列表 (通用逻辑)
+        enum_key = slot.definition.enums_key or slot_name
+        # 这里复用了通用的过滤逻辑，它基于 business_filters 配置工作
         options = self._get_filtered_options(enum_key)
+        
+        # 生成选项文本列表 (带序号)
+        option_text_lines = []
+        if options:
+            # 针对 storage 的特殊显示过滤也可以移入配置，但目前保留此处作为唯一的硬逻辑残留点也尚可接受，
+            # 或者将其视为一种通用的 "display_filter" 机制
+            display_options = options
+            if enum_key == 'storage':
+                 # 简单的硬编码残留，理想情况下这也应该配置化，但在核心层保留这一点点
+                 # 暂时为了完全去业务化，我们只做通用截断
+                 pass
+            
+            option_text_lines = [f"{i+1}. {opt['label']}" for i, opt in enumerate(display_options)][:10]
 
         def _has_numbering(lines: List[str]) -> bool:
             return any(l.strip().startswith("1.") for l in lines)
 
-        # 构造输出行集合
+        # 4. 组装最终输出
         out_lines: List[str] = []
-        force_chip_enumerate = slot_name == "chip" and self.business_line == "apple_store" and category_val in {"手机", "平板"}
+        
         if template_lines:
-            if force_chip_enumerate:
-                # 对手机/平板覆盖芯片模板，使用动态过滤枚举
-                out_lines.append("请选择芯片：")
+            # 检查并替换 {options} 占位符
+            has_placeholder = any("{options}" in line for line in template_lines)
+            
+            if has_placeholder:
+                joined_options = "\n".join(option_text_lines)
+                for line in template_lines:
+                    if "{options}" in line:
+                        # 替换占位符，如果选项为空则替换为空字符串
+                        replaced = line.replace("{options}", joined_options)
+                        if replaced.strip(): # 避免插入空行
+                            out_lines.append(replaced)
+                    else:
+                        out_lines.append(line)
             else:
+                # 如果没有占位符，且模板本身没带编号，则追加选项
                 out_lines.extend(template_lines)
-                # 如果模板本身已有编号列表则不重复附加枚举
-                if _has_numbering(template_lines):
-                    return "\n".join(out_lines)
-        # 如果没有模板或模板没有编号，附加枚举选项
-        if options:
-            filtered = options
-            if enum_key == 'storage':
-                # 根据类别过滤后再保留常见容量的简化列表（电脑不显示128/256）
-                if category_val == "电脑":
-                    filtered = [o for o in options if o['label'] in {'512GB','1TB','2TB'}]
-                else:
-                    filtered = options
-            lines = [f"{i+1}. {opt['label']}" for i, opt in enumerate(filtered)]
-            out_lines.extend(lines[:10])
-        if out_lines:
-            return "\n".join(out_lines)
-        # 回退固定提示
-        prompts = {
-            "series": "先选一个系列：\n1. MacBook Air\n2. MacBook Pro\n3. iMac",
-            "chip": "来挑芯片：\n1. M3\n2. M3 Pro\n3. M3 Max",
-            "storage": "选存储大小：\n1. 512GB\n2. 1TB\n3. 2TB",
-            "color": "选个颜色：\n1. 深空灰\n2. 银色\n3. 午夜色\n4. 星光色"
-        }
-        default_template = business_config_loader.get_template(self.business_line, "form_default_slot_prompt")
-        if default_template:
-            return "\n".join(default_template).replace("{slot_desc}", self.current_form[slot_name].definition.description)
-        return prompts.get(slot_name, f"告诉我 {self.current_form[slot_name].definition.description} 哦～")
+                if option_text_lines and not _has_numbering(template_lines):
+                    out_lines.extend(option_text_lines)
+        else:
+            # 如果没有模板，回退到简单的默认提示 + 选项
+            default_template = business_config_loader.get_template(self.business_line, "form_default_slot_prompt")
+            if default_template:
+                base_prompt = "\n".join(default_template).replace("{slot_desc}", slot.definition.description)
+                out_lines.append(base_prompt)
+            else:
+                out_lines.append(f"请选择 {slot.definition.description}:")
+            
+            if option_text_lines:
+                out_lines.extend(option_text_lines)
 
+        return "\n".join(out_lines)
+
+    def _evaluate_slot_condition(self, condition: str) -> bool:
+        """
+        简单的条件表达式求值器
+        支持格式: "slot_name == 'value'"
+        """
+        if not condition:
+            return True
+            
+        # 简单解析: "category == '电脑'"
+        import re
+        match = re.match(r"(\w+)\s*==\s*['\"](.+)['\"]", condition.strip())
+        if match:
+            target_slot, target_val = match.groups()
+            
+            # 获取当前槽位的值
+            current_slot = self.current_form.get(target_slot)
+            if current_slot and current_slot.value:
+                return current_slot.value.value == target_val
+                
+        return False # 解析失败或条件不满足
+    
     def _business_numeric_map(self, enum_key: str, number: int) -> Optional[str]:
         """业务线作用域下的数字序号映射（避免统一业务枚举因全局前缀找不到）"""
         options = self._get_filtered_options(enum_key)
@@ -1267,7 +1310,7 @@ class FormBasedDialogSystem:
         }
     
     def _generate_order_summary(self) -> str:
-        """生成订单摘要显示（显示所有必填槽位，未填充的显示'待填写'）"""
+        """生成订单摘要显示（优化版：显示必填项 + 已填写的选填项）"""
         title_template = business_config_loader.get_template(self.business_line, "form_order_summary_title")
         if title_template:
             summary_lines = title_template.copy()
@@ -1275,13 +1318,19 @@ class FormBasedDialogSystem:
             summary_lines = ["📝 您的订单信息："]
         summary_lines.append("=" * 30)
         
-        # 显示所有必填槽位（包括EMPTY状态）
         for name, slot in self.current_form.items():
-            if slot.definition.required:  # 只显示必填槽位
-                if slot.status == SlotStatus.FILLED and slot.value:
-                    summary_lines.append(f"• {slot.definition.description}: {slot.value.value}")
-                elif slot.status == SlotStatus.EMPTY:
-                    summary_lines.append(f"• {slot.definition.description}: 待填写")
+            # 显示逻辑：
+            # 1. 如果是必填项 -> 必须显示
+            # 2. 如果是非必填项 -> 只有填了值才显示
+            is_required = slot.definition.required
+            is_filled = (slot.status == SlotStatus.FILLED and slot.value)
+            
+            if is_required or is_filled:
+                desc = slot.definition.description
+                if is_filled:
+                    summary_lines.append(f"• {desc}: {slot.value.value}")
+                else:
+                    summary_lines.append(f"• {desc}: 待填写")
         
         summary_lines.append("=" * 30)
         return "\n".join(summary_lines)

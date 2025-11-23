@@ -174,8 +174,12 @@ def test_mixed_scenarios():
     # 混合使用精确匹配和意图推荐
     form.process_input('电脑', llm, mapper)  # 精确匹配
     form.process_input('MacBook Pro', llm, mapper)  # 精确匹配
-    form.process_input('做视频剪辑', llm, mapper)  # 意图推荐
-    form.process_input('16寸', llm, mapper)  # 精确匹配
+    
+    # [修正] 意图推荐芯片(chip)前，必须先满足其依赖项尺寸(size)
+    form.process_input('16寸', llm, mapper)  # 精确匹配 - 提前到这里
+    
+    form.process_input('做视频剪辑', llm, mapper)  # 意图推荐 -> 推荐 M3 Pro + 1TB
+    
     form.process_input('银色', llm, mapper)  # 精确匹配
     
     # 检查是否正确处理了混合输入

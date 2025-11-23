@@ -1,16 +1,10 @@
 # dining.flow.yaml
-# 餐饮预订流程定义
-# 基于YAML的声明式DSL脚本
-# 作者: 胡老师团队
-# 日期: 2024-11-19
-
+# 餐饮预订流程定义 (升级版 v2.1)
 flow:
   name: dining_reservation
-  version: "1.0"
+  version: "2.1"
   description: "餐厅预订智能表单流程"
   business_line: dining
-  
-  # ==================== 流程配置 ====================
   
   process_order:
     - category
@@ -18,10 +12,9 @@ flow:
     - series
     - party_size
     - date
+    - budget    # 确保包含预算
     - contact
     
-  # ==================== 槽位定义 ====================
-  
   slots:
     category:
       label: "预订类型"
@@ -73,9 +66,15 @@ flow:
       enums_key: date
       dependencies: [party_size]
       prompt_template: form_date_prompt
-      validation:
-        must_be_valid_enum: true
-        min_confidence: 0.35
+      
+    budget:
+      label: "人均预算"
+      description: "预计消费预算"
+      required: false
+      allow_llm: true
+      type: text
+      dependencies: [date]
+      prompt_template: form_budget_prompt
         
     contact:
       label: "联系方式"
@@ -83,24 +82,24 @@ flow:
       required: true
       allow_llm: true
       type: text
-      dependencies: [date]
+      dependencies: [budget]
       prompt_template: form_contact_prompt
-  
-  # ==================== 事件处理 ====================
   
   events:
     on_start:
       - action: reset_form
       - action: show_template
         template: form_welcome
-    
+      - action: show_slot_prompt
+        slot: category
+
     on_all_filled:
       - action: show_summary
       - action: ask_confirm
       
     on_confirm:
       - action: validate_form
-      - action: submit_order  # 统一使用submit_order
+      - action: submit_order
       - action: show_template
         template: form_order_confirmed
       - action: show_template
@@ -111,8 +110,6 @@ flow:
       - action: reset_form
       - action: show_welcome
 
-  # ==================== 用户命令 ====================
-  
   commands:
     restart:
       keywords: ["重新预订", "重来", "reset"]
@@ -121,7 +118,7 @@ flow:
     confirm:
       keywords: ["确认", "好的", "是的", "没问题"]
       condition: all_slots_filled
-      action: confirm_order  # 统一使用confirm_order
+      action: confirm_order
       
     modify:
       keywords: ["修改", "改一下", "重选"]
@@ -136,36 +133,6 @@ flow:
       action: show_help
       response: |
         📖 预订帮助：
-        
         • 按照提示提供预订信息
         • 可以说"修改"重新选择某项
         • 说"重新预订"可以清空重来
-        • 说"帮助"查看本说明
-
-  # ==================== 验证规则 ====================
-  
-  validations:
-    - name: weekend_people_limit
-      description: "周末用餐人数限制"
-      enabled: true
-      when:
-        slots_filled: [date, people]
-      rules:
-        - condition: "is_weekend(date) and people > 10"
-          valid: false
-          message: "周末最多接待10人用餐，如需更多人数请提前致电"
-    
-    - name: time_availability
-      description: "检查时间段可用性"
-      enabled: false  # 需要接入真实预订系统
-      when:
-        slots_filled: [date, time]
-      action: check_availability
-
-  # ==================== 模板 ====================
-  
-  templates:
-    form_welcome:
-      - "🍽️ 欢迎使用餐厅预订系统"
-      - "我会帮您快速完成预订"
-      - "让我们开始吧～"

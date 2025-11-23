@@ -47,7 +47,6 @@ class FlowInterpreter:
         将YAML中的槽位配置注册到表单系统
         这样表单系统就知道每个槽位的enums_key、dependencies等信息
         """
-        from knowledge.business_config_loader import business_config_loader
         
         for slot_name, slot_config in self.slots_config.items():
             # 获取槽位对象
@@ -58,20 +57,24 @@ class FlowInterpreter:
             
             # 从YAML配置更新槽位属性
             if 'enums_key' in slot_config:
-                slot_obj.enums_key = slot_config['enums_key']
+                slot_obj.definition.enums_key = slot_config['enums_key']
             
             if 'semantic_stage' in slot_config:
-                slot_obj.semantic_stage = slot_config['semantic_stage']
+                slot_obj.definition.semantic_stage = slot_config['semantic_stage']
             
             if 'allow_llm' in slot_config:
-                slot_obj.allow_llm = slot_config['allow_llm']
+                slot_obj.definition.allow_llm = slot_config['allow_llm']
             
             if 'dependencies' in slot_config:
-                slot_obj.dependencies = slot_config['dependencies']
+                slot_obj.definition.dependencies = slot_config['dependencies']
             
-            # 如果YAML中定义了prompt_template，可以预加载
+            # [关键修改] 动态注入 prompt_template 和 conditional_prompts
+            # 这些属性原本不在 SlotDefinition 中，我们动态挂载到 FormSlot 对象上
             if 'prompt_template' in slot_config:
                 slot_obj.prompt_template = slot_config['prompt_template']
+                
+            if 'conditional_prompts' in slot_config:
+                slot_obj.conditional_prompts = slot_config['conditional_prompts']
     
     def process_input(self, user_input: str, llm_client=None, semantic_mapper=None) -> Dict[str, Any]:
         """
@@ -101,15 +104,7 @@ class FlowInterpreter:
         return result
     
     def _check_commands(self, user_input: str) -> Optional[Dict[str, Any]]:
-        """
-        检查用户输入是否匹配命令
-        
-        Args:
-            user_input: 用户输入
-            
-        Returns:
-            命令执行结果，如果不匹配返回None
-        """
+        """检查用户输入是否匹配命令"""
         user_input_lower = user_input.lower().strip()
         
         for cmd_name, cmd_config in self.commands.items():
@@ -135,17 +130,7 @@ class FlowInterpreter:
         return None
     
     def _execute_command_action(self, action: str, response: Optional[str], config: dict) -> Dict[str, Any]:
-        """
-        执行命令动作
-        
-        Args:
-            action: 动作名称
-            response: 预定义响应
-            config: 命令配置
-            
-        Returns:
-            执行结果
-        """
+        """执行命令动作"""
         if action == 'confirm_order':
             # 确认订单 - 先检查是否有验证错误
             if not self._all_slots_filled():
@@ -176,11 +161,6 @@ class FlowInterpreter:
             reselect_options = self.form._generate_reselect_options()
             return {"response": reselect_options, "action": "reselect"}
         
-        elif action == 'confirm_order':
-            # 确认订单
-            self._trigger_event('on_confirm')
-            return self.last_response or {"response": "订单已确认"}
-        
         elif action == 'show_summary':
             # 显示订单摘要
             summary = self.form._generate_order_summary()
@@ -200,15 +180,7 @@ class FlowInterpreter:
             return {"response": f"未知命令动作: {action}"}
     
     def _trigger_event(self, event_name: str) -> Optional[Dict[str, Any]]:
-        """
-        触发事件处理器
-        
-        Args:
-            event_name: 事件名称
-            
-        Returns:
-            事件处理结果(如果有响应)
-        """
+        """触发事件处理器"""
         if event_name not in self.events:
             return None
         
@@ -225,6 +197,8 @@ class FlowInterpreter:
                 # 重置表单(保持business_line)
                 business_line = self.form.business_line
                 self.form = FormBasedDialogSystem(business_line)
+                # 重新注册槽位配置，因为表单被重置了
+                self._register_slots_to_form()
             
             elif action == 'auto_fill_single_options':
                 self.form._auto_fill_single_option_slots()
@@ -237,7 +211,16 @@ class FlowInterpreter:
                     template_name
                 )
                 if template_lines:
+                    # 这里也可以应用通用的模板处理逻辑（如替换变量），如果需要的话
                     responses.append("\n".join(template_lines))
+           
+            elif action == 'show_slot_prompt':
+                slot_name = handler.get('slot')
+                if slot_name:
+                    # 调用表单系统的生成逻辑，支持 {options} 替换和动态过滤
+                    prompt = self.form._generate_slot_prompt(slot_name)
+                    if prompt:
+                        responses.append(prompt)
             
             elif action == 'show_summary':
                 summary = self.form._generate_order_summary()
@@ -246,8 +229,6 @@ class FlowInterpreter:
             
             elif action == 'submit_order':
                 self.form.order_confirmed = True
-                # 只显示订单详情，不自动添加确认信息
-                # (确认信息应由YAML的show_template定义)
                 summary = self.form._generate_order_summary()
                 if summary:
                     responses.append(summary)
@@ -262,15 +243,7 @@ class FlowInterpreter:
         return None
     
     def _evaluate_condition(self, condition: str) -> bool:
-        """
-        评估条件表达式
-        
-        Args:
-            condition: 条件字符串
-            
-        Returns:
-            条件是否满足
-        """
+        """评估条件表达式"""
         if condition == 'all_slots_filled':
             return self._all_slots_filled()
         
@@ -283,40 +256,21 @@ class FlowInterpreter:
         return False
     
     def _check_availability(self, available_when: str) -> bool:
-        """
-        检查命令可用性
-        
-        Args:
-            available_when: 可用条件
-            
-        Returns:
-            是否可用
-        """
+        """检查命令可用性"""
         if available_when == 'always':
             return True
-        
         elif available_when == 'any_slot_filled':
             return any(
                 slot.status == SlotStatus.FILLED
                 for slot in self.form.current_form.values()
             )
-        
         elif available_when == 'all_slots_filled':
             return self._all_slots_filled()
-        
         return True
     
     def _all_slots_filled(self) -> bool:
         """检查所有槽位是否已填充"""
         return self.form._check_form_completeness()
-    
-    def _get_next_empty_slot(self) -> Optional[str]:
-        """按process_order顺序获取下一个空槽位"""
-        for slot_name in self.process_order:
-            slot_obj = self.form.current_form.get(slot_name)
-            if slot_obj and slot_obj.status == SlotStatus.EMPTY:
-                return slot_name
-        return None
     
     def _run_validations(self):
         """运行配置的验证规则"""
@@ -338,12 +292,8 @@ class FlowInterpreter:
             if not all_filled:
                 continue
             
-            # 执行验证规则
-            rules = validation.get('rules', [])
-            for rule in rules:
-                # 这里可以实现更复杂的验证逻辑
-                # 当前仅作为示例
-                pass
+            # 执行验证规则（此处仅为占位，实际逻辑在slot_validators中或需扩展）
+            pass
     
     def get_flow_info(self) -> Dict[str, Any]:
         """获取流程信息"""
